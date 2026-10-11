@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/menuRefrescar"
+        android:title="Refrescar"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/menuReiniciarEsDe"
+        android:title="Reiniciar ES-DE"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/menuSincronizarConsolas"
+        android:title="Sincronizar consolas"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/menuConsolasBloqueadas"
+        android:title="Consolas bloqueadas"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/menuServidor"
+        android:title="Servidor y consola"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/menuCambiarCarpeta"
+        android:title="Cambiar carpeta de ROMs"
+        android:showAsAction="never" />
+</menu>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Texto oscuro cuando el boton esta enfocado (fondo verde brillante),
+     texto verde fosforo en el resto de estados (fondo oscuro). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:color="#10151a" />
+    <item android:color="#7bffb0" />
+</selector>

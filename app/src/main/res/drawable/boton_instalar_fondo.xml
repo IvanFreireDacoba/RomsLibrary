@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Estado enfocado (mando/D-pad): verde fosforo CRT, igual que el acento de
+     la web. Sin foco: fondo oscuro con borde, mismo estilo que los botones
+     "activos" de la web (fondo #1c3a24, borde/texto #7bffb0). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#7bffb0" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#244a2e" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#1c3a24" />
+            <stroke android:width="1dp" android:color="#7bffb0" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+</selector>
