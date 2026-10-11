@@ -1,0 +1,60 @@
+# Caddy pone el HTTPS (Let's Encrypt, automático) y decide qué pasa por Authentik.
+#
+# - API de la app y federación entre librerías: abiertas (tienen su propia
+#   autenticación: clave de acceso de la app y tickets del índice).
+# - Gestor web (/gestor/): solo usuarios autenticados en Authentik. Caddy
+#   añade el usuario y el secreto compartido con el servicio; el servicio
+#   no acepta el usuario si no llega ese secreto.
+
+{$ROMSLIBRARY_DOMINIO} {
+	encode zstd gzip
+
+	# Callback del outpost de Authentik (inicio y fin de sesión del gestor).
+	handle /outpost.goauthentik.io/* {
+		reverse_proxy authentik-server:9000
+	}
+
+	handle /gestor* {
+		# "route" ejecuta en el orden escrito (si no, Caddy ordena él las
+		# directivas y forward_auth iría ANTES que request_header, que
+		# borraría el usuario que acaba de poner Authentik).
+		route {
+			# Nunca se fía de cabeceras de usuario que mande el navegador.
+			request_header -X-Authentik-Username
+			request_header -X-RomsLibrary-Proxy
+			forward_auth authentik-server:9000 {
+				uri /outpost.goauthentik.io/auth/caddy
+				copy_headers X-Authentik-Username
+				trusted_proxies private_ranges
+			}
+			reverse_proxy romslibrary:8765 {
+				header_up X-RomsLibrary-Proxy {$ROMSLIBRARY_SECRETO_PROXY}
+				flush_interval -1
+				transport http {
+					read_timeout 2h
+					write_timeout 2h
+				}
+			}
+		}
+	}
+
+	handle / {
+		redir * /gestor/ 302
+	}
+
+	handle {
+		request_header -X-RomsLibrary-Proxy
+		reverse_proxy romslibrary:8765 {
+			flush_interval -1
+			transport http {
+				read_timeout 2h
+				write_timeout 2h
+			}
+		}
+	}
+}
+
+# Pantalla de inicio de sesión y administración de Authentik.
+{$AUTENTICACION_DOMINIO} {
+	reverse_proxy authentik-server:9000
+}

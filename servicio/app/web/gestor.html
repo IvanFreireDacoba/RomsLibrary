@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RomsLibrary · Gestor</title>
+    <style>
+        /* ===== Estilo base (antes /staff-assets/hacker-style de sund.es; ahora
+           dentro de la página para que el gestor no dependa de nadie) ===== */
+/* ============================================================
+   Estilo "hacker" / terminal para herramientas de staff detras de
+   Authentik (romlibrary, pocketcrossing_mapa, pocketcrossing_editor,
+   documentacion, bettercombat-generator). Reemplaza por completo al
+   CSS compartido de sund.es -- estas paginas ya no dependen de la
+   sesion/tema del sitio publico.
+   ============================================================ */
+
+:root {
+    --hk-bg: #06090a;
+    --hk-bg-panel: #0b1210;
+    --hk-bg-panel-2: #0e1613;
+    --hk-green: #39ff7a;
+    --hk-green-dim: #2fa85c;
+    --hk-green-faint: #184a2c;
+    --hk-amber: #ffd166;
+    --hk-red: #ff5c5c;
+    --hk-text: #c9f7d8;
+    --hk-text-muted: #6fa884;
+    --hk-border: #1f3d28;
+    --hk-mono: "Fira Code", "Cascadia Code", "Courier New", Consolas, monospace;
+
+    /* alias para var(--text-muted) usado inline en las vistas ya existentes */
+    --text-muted: var(--hk-text-muted);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    background: var(--hk-bg);
+    color: var(--hk-text);
+    font-family: var(--hk-mono);
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+}
+
+body {
+    padding: 28px;
+    line-height: 1.5;
+    background-image:
+        radial-gradient(circle at 50% 0%, rgba(57, 255, 122, 0.06), transparent 60%);
+}
+
+h1, h2, h3, h4 {
+    color: var(--hk-green);
+    font-family: var(--hk-mono);
+    text-shadow: 0 0 6px rgba(57, 255, 122, 0.35);
+    letter-spacing: 0.5px;
+}
+
+h1::before, h2::before, .section-title::before {
+    content: "> ";
+    color: var(--hk-green-dim);
+}
+
+a {
+    color: var(--hk-green);
+    text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+p { color: var(--hk-text); }
+
+hr { border-color: var(--hk-border); }
+
+::selection {
+    background: var(--hk-green-faint);
+    color: #fff;
+}
+
+/* scrollbar, detalle de ambiente */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--hk-bg); }
+::-webkit-scrollbar-thumb { background: var(--hk-green-faint); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--hk-green-dim); }
+
+/* ---------- controles genericos ---------- */
+
+button, input, select, textarea {
+    font-family: var(--hk-mono);
+    color: var(--hk-text);
+    background: var(--hk-bg-panel);
+    border: 1px solid var(--hk-border);
+    border-radius: 4px;
+    padding: 8px 10px;
+}
+
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--hk-green-dim);
+    box-shadow: 0 0 0 2px rgba(57, 255, 122, 0.15);
+}
+
+button, .login-btn, .rl-btn, .bcg-btn {
+    background: transparent;
+    color: var(--hk-green);
+    border: 1px solid var(--hk-green-dim);
+    cursor: pointer;
+    padding: 9px 16px;
+    border-radius: 4px;
+    font-weight: 600;
+    transition: background 0.12s, color 0.12s, box-shadow 0.12s;
+}
+
+button:hover, .login-btn:hover, .rl-btn:hover, .bcg-btn:hover {
+    background: var(--hk-green);
+    color: #04140a;
+    box-shadow: 0 0 14px rgba(57, 255, 122, 0.45);
+}
+
+button:disabled, .login-btn:disabled, .bcg-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.bcg-btn--primary {
+    background: var(--hk-green-faint);
+    color: var(--hk-green);
+}
+.bcg-btn--primary:hover {
+    background: var(--hk-green);
+    color: #04140a;
+}
+
+.bcg-btn--ghost {
+    border-color: var(--hk-border);
+    color: var(--hk-text-muted);
+}
+.bcg-btn--ghost:hover {
+    background: var(--hk-bg-panel-2);
+    color: var(--hk-green);
+    box-shadow: none;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+th, td {
+    border: 1px solid var(--hk-border);
+    padding: 6px 10px;
+    color: var(--hk-text);
+}
+th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
+
+/* ---------- layout compartido (ex sund.es) ---------- */
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.hero {
+    padding: 18px 0 28px;
+    border-bottom: 1px solid var(--hk-border);
+    margin-bottom: 24px;
+}
+.hero-title {
+    font-size: 1.6em;
+    margin: 0;
+}
+
+.section-title {
+    margin-top: 40px;
+    border-bottom: 1px solid var(--hk-border);
+    padding-bottom: 8px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+.form-group label {
+    display: block;
+    color: var(--hk-green-dim);
+    margin-bottom: 6px;
+    font-size: 0.9em;
+}
+
+.server-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 18px;
+    margin-top: 18px;
+}
+.server-card {
+    background: var(--hk-bg-panel);
+    border: 1px solid var(--hk-border);
+    border-radius: 8px;
+    padding: 18px;
+}
+.server-card strong { color: var(--hk-green); }
+
+.main-footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--hk-border);
+    color: var(--hk-text-muted);
+    font-size: 0.85em;
+}
+
+/* ---------- romlibrary ---------- */
+
+.rl-panel {
+    background: var(--hk-bg-panel);
+    border: 1px solid var(--hk-border);
+    border-radius: 10px;
+    padding: 20px;
+}
+.rl-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+}
+.rl-card-nombre { color: var(--hk-green); font-weight: 600; }
+.rl-card-sys { color: var(--hk-text-muted); font-size: 0.85em; }
+.rl-drop {
+    border: 1px dashed var(--hk-green-dim);
+    border-radius: 8px;
+    padding: 24px;
+    text-align: center;
+    color: var(--hk-text-muted);
+    cursor: pointer;
+}
+.rl-drop:hover { border-color: var(--hk-green); color: var(--hk-green); }
+.rl-filtros { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.rl-msg { color: var(--hk-amber); }
+
+        /* ===== Gestor de RomsLibrary ===== */
+        .rl-hero-nombre { color: var(--hk-text-muted); font-size: 0.7em; }
+        .rl-cabecera { display: grid; grid-template-columns: 1fr minmax(320px, 420px); gap: 14px; flex: none; }
+        .rl-ajustes summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 12px; }
+        .rl-ajustes summary h2 { display: inline; margin: 0; }
+        .rl-ajustes[open] { max-height: 60vh; overflow-y: auto; }
+        .rl-ajustes-resumen { color: var(--hk-amber); font-size: 0.85em; }
+        .rl-ajustes input[type="text"], .rl-ajustes input[type="password"] { width: 100%; }
+        .rl-check { display: flex !important; gap: 8px; align-items: center; }
+        .rl-ayuda { color: var(--hk-text-muted); font-size: 0.85em; }
+        .rl-clave-fila { display: flex; gap: 6px; }
+        .rl-clave-fila input { flex: 1; }
+        .rl-clave-fila button { padding: 6px 10px; }
+        .rl-card-lib { display: inline-block; margin-left: 6px; background: #2a2440; color: #c8a2ff; border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+        .rl-copias { flex: none; }
+        .rl-copia { font-size: 12px; padding: 4px 0; color: #9fd9a0; }
+        .rl-copia-error { color: #ff8a8a; }
+        .rl-copia-hecha { color: #7bffb0; }
+        @media (max-width: 860px) { .rl-cabecera { grid-template-columns: 1fr; } }
+        .rl-panel {
+            background: #10151a;
+            border: 2px solid #3a4a3a;
+            border-radius: 14px;
+            padding: 22px;
+            color: #d7e4d7;
+            font-family: "Courier New", Consolas, monospace;
+            box-shadow: 0 0 0 4px #0a0d10 inset;
+        }
+
+        .rl-panel h2, .rl-panel h3 {
+            color: #7bffb0;
+            text-shadow: 0 0 6px rgba(123, 255, 176, .35);
+            letter-spacing: 1px;
+        }
+
+        .rl-panel label {
+            display: block;
+            margin-top: 12px;
+            margin-bottom: 4px;
+            color: #9fd9a0;
+        }
+
+        .rl-panel input[type="text"],
+        .rl-panel select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 8px;
+            background: #05070a;
+            border: 1px solid #3a4a3a;
+            border-radius: 6px;
+            color: #d7e4d7;
+            font-family: inherit;
+        }
+
+        .rl-drop {
+            margin-top: 10px;
+            border: 2px dashed #3a4a3a;
+            border-radius: 10px;
+            padding: 26px 14px;
+            text-align: center;
+            color: #6f8f6f;
+            transition: border-color .15s, color .15s;
+            cursor: pointer;
+        }
+
+        .rl-drop.rl-drop-over {
+            border-color: #7bffb0;
+            color: #7bffb0;
+        }
+
+        .rl-drop.rl-drop-filled {
+            border-style: solid;
+            border-color: #7bffb0;
+            color: #d7e4d7;
+        }
+
+        .rl-btn {
+            display: inline-block;
+            margin-top: 16px;
+            padding: 10px 18px;
+            background: #1c3a24;
+            border: 2px solid #7bffb0;
+            border-radius: 8px;
+            color: #7bffb0;
+            font-family: inherit;
+            font-weight: bold;
+            letter-spacing: 1px;
+            cursor: pointer;
+        }
+
+        .rl-btn:hover {
+            background: #244a2e;
+        }
+
+        .rl-btn:disabled {
+            opacity: .5;
+            cursor: default;
+        }
+
+        .rl-filtros {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+        }
+
+        .rl-filtros>* {
+            flex: 1 1 200px;
+        }
+
+        .rl-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 16px;
+        }
+
+        .rl-card {
+            background: #05070a;
+            border: 2px solid #3a4a3a;
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Marco SIEMPRE cuadrado y la imagen entera dentro (contain, nunca
+           cover): hay carátulas con relaciones de aspecto muy distintas
+           (cajas GBA apaisadas, PS1 cuadradas, Switch verticales...) y
+           recortarlas escondía media portada. */
+        .rl-card-cover {
+            aspect-ratio: 1 / 1;
+            background: #0e1f14 repeating-linear-gradient(45deg, #0e1f14, #0e1f14 8px, #122616 8px, #122616 16px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #3a5a3a;
+            font-size: 12px;
+            text-align: center;
+            padding: 6px;
+        }
+
+        .rl-card-cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .rl-card-body {
+            padding: 8px 10px;
+            font-size: 13px;
+        }
+
+        .rl-card-sys {
+            display: inline-block;
+            background: #1c3a24;
+            color: #7bffb0;
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+
+        .rl-card-nombre {
+            word-break: break-word;
+            margin: 2px 0 8px;
+        }
+
+        .rl-card-del {
+            background: none;
+            border: 1px solid #6a3a3a;
+            color: #ff8a8a;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .rl-card-del:hover {
+            background: #2a1414;
+        }
+
+        .rl-msg {
+            margin-top: 10px;
+            font-size: 13px;
+        }
+
+        .rl-disk-bar {
+            display: flex;
+            height: 26px;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid #3a4a3a;
+            background: #05070a;
+        }
+
+        .rl-disk-seg {
+            height: 100%;
+        }
+
+        .rl-disk-leyenda {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            margin-top: 12px;
+            font-size: 12px;
+        }
+
+        .rl-disk-leyenda span.rl-disk-punto {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            margin-right: 5px;
+        }
+
+        .rl-disk-total {
+            margin-top: 6px;
+            font-size: 12px;
+            color: #9fd9a0;
+        }
+
+        /* ---------- Layout a pantalla completa ----------
+           La página entera ocupa exactamente el alto de la ventana: uso de
+           disco arriba, y debajo "Subir ROM" (columna fija a la izquierda) +
+           Biblioteca (todo el ancho restante, hasta el borde derecho). Solo
+           se hace scroll DENTRO de la biblioteca (y del formulario de subida
+           si no cabe), nunca de la página. Antes usaba .server-grid (columnas
+           de 280px del CSS compartido): la biblioteca caía en una sola celda
+           de 280px y solo cabía una carátula por fila. */
+        body.rl-page {
+            height: 100vh;
+            box-sizing: border-box;
+            padding: 14px 20px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        body.rl-page .hero {
+            flex: none;
+            padding: 4px 0 10px;
+            margin-bottom: 14px;
+        }
+
+        .rl-container {
+            flex: 1;
+            min-height: 0;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .rl-container .rl-panel {
+            padding: 16px 18px;
+        }
+
+        .rl-container .rl-panel h2 {
+            margin: 0 0 12px;
+        }
+
+        .rl-disk-panel {
+            flex: none;
+        }
+
+        .rl-layout {
+            flex: 1;
+            min-height: 0;
+            display: grid;
+            grid-template-columns: minmax(300px, 380px) 1fr;
+            gap: 14px;
+        }
+
+        .rl-subir {
+            min-height: 0;
+            overflow-y: auto;
+        }
+
+        .rl-biblioteca {
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .rl-biblioteca .rl-filtros {
+            flex: none;
+        }
+
+        /* grid-auto-rows: max-content es imprescindible: con una altura fija
+           (flex:1) y tarjetas con overflow:hidden, el algoritmo de grid
+           encogía TODAS las filas para que cupieran en el panel, recortando
+           el nombre y los botones. Así cada fila mide lo que su tarjeta, y
+           las que no caben quedan "por debajo", accesibles con scroll. */
+        .rl-biblioteca .rl-grid {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            grid-auto-rows: max-content;
+            align-content: start;
+            padding-right: 6px;
+        }
+
+        .rl-card {
+            min-height: max-content;
+        }
+
+        /* Pantallas estrechas (móvil): una columna y scroll normal de página,
+           con la biblioteca limitada para que siga scrolleando por dentro. */
+        @media (max-width: 860px) {
+            body.rl-page {
+                height: auto;
+                overflow: visible;
+            }
+
+            .rl-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .rl-biblioteca .rl-grid {
+                max-height: 80vh;
+            }
+        }
+
+        .rl-card-acciones {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .rl-card-descargar {
+            flex: 1 1 100%;
+            box-sizing: border-box;
+            text-align: center;
+            text-decoration: none;
+            border: 1px solid #3a5a6a;
+            color: #8fd3ff;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        .rl-card-descargar:hover {
+            background: #10202a;
+        }
+
+        .rl-card-edit {
+            flex: 1;
+            background: none;
+            border: 1px solid #3a6a4a;
+            color: #7bffb0;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .rl-card-edit:hover {
+            background: #12261a;
+        }
+
+        .rl-card-acciones .rl-card-del {
+            flex: 1;
+            width: auto;
+            font-family: inherit;
+        }
+
+        /* ---------- Diálogo de edición ---------- */
+        .rl-dialogo {
+            width: min(520px, 92vw);
+            max-height: 90vh;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+
+        .rl-dialogo::backdrop {
+            background: rgba(0, 0, 0, .7);
+        }
+
+        .rl-edit-nombre-fila {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .rl-edit-nombre-fila input {
+            flex: 1;
+        }
+
+        .rl-edit-ext {
+            color: #9fd9a0;
+            white-space: nowrap;
+        }
+
+        .rl-edit-cover {
+            display: flex;
+            gap: 14px;
+            align-items: stretch;
+            margin-top: 6px;
+        }
+
+        .rl-edit-cover .rl-card-cover {
+            width: 120px;
+            flex: none;
+            border: 2px solid #3a4a3a;
+            border-radius: 8px;
+            overflow: hidden;
+            padding: 0;
+        }
+
+        .rl-edit-cover .rl-drop {
+            flex: 1;
+            margin-top: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .rl-edit-aviso {
+            font-size: 12px;
+            color: #9fb3c8;
+            margin-top: 6px;
+        }
+
+        .rl-edit-botones {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .rl-btn-secundario {
+            background: none;
+            border-color: #3a4a3a;
+            color: #9fd9a0;
+        }
+    </style>
+</head>
+
+<body class="rl-page">
+
+    <header class="hero">
+        <h1 class="hero-title">RomsLibrary <span class="rl-hero-nombre" id="rl-hero-nombre"></span></h1>
+    </header>
+
+    <section class="rl-container">
+        <div class="rl-cabecera">
+            <div class="server-card rl-panel rl-disk-panel">
+                <h2>&gt; Uso de disco_</h2>
+                <div class="rl-disk-bar" id="rl-disk-bar"></div>
+                <div class="rl-disk-leyenda" id="rl-disk-leyenda"></div>
+                <div class="rl-disk-total" id="rl-disk-total">Cargando...</div>
+            </div>
+            <details class="server-card rl-panel rl-ajustes" id="rl-ajustes">
+                <summary><h2>&gt; Ajustes del servicio_</h2> <span id="rl-ajustes-resumen" class="rl-ajustes-resumen"></span></summary>
+                <label for="rl-aj-nombre">Nombre de la librería</label>
+                <input type="text" id="rl-aj-nombre" maxlength="60">
+                <label for="rl-aj-url">URL pública (por la que llegan la app y otras librerías)</label>
+                <input type="text" id="rl-aj-url" placeholder="https://mi-dominio.es">
+                <label class="rl-check"><input type="checkbox" id="rl-aj-publico"> Librería pública
+                    <span class="rl-ayuda">(comparte tus juegos y ve los de otras librerías públicas)</span></label>
+                <label>Clave de acceso para la app</label>
+                <div class="rl-clave-fila">
+                    <input type="password" id="rl-aj-clave" readonly>
+                    <button type="button" id="rl-aj-ver">Ver</button>
+                    <button type="button" id="rl-aj-copiar">Copiar</button>
+                    <button type="button" id="rl-aj-regenerar">Regenerar</button>
+                </div>
+                <p class="rl-ayuda" id="rl-aj-federacion"></p>
+                <button class="rl-btn" id="rl-aj-guardar">Guardar ajustes</button>
+                <div class="rl-msg" id="rl-aj-msg"></div>
+            </details>
+        </div>
+
+        <div class="rl-layout">
+
+            <div class="server-card rl-panel rl-subir">
+                <h2>&gt; Subir ROM_</h2>
+
+                <label for="rl-sistema">Consola</label>
+                <select id="rl-sistema">
+                    <option value="gb">GameBoy</option>
+                    <option value="gbc">GameBoy Color</option>
+                    <option value="gba">GameBoy Advance</option>
+                    <option value="n64">N64</option>
+                    <option value="gc">GameCube</option>
+                    <option value="switch">Switch</option>
+                    <option value="psx">PlayStation</option>
+                    <option value="ps2">PlayStation 2</option>
+                    <option value="psp">PSP</option>
+                    <option value="rpgmaker">RPG Maker (Kirin)</option>
+                </select>
+
+                <label style="display:block;margin-top:6px;" id="rl-label-modo-grupo">
+                    <input type="checkbox" id="rl-modo-grupo"> Juego de varios ficheros (PS1 cue+bin, multidisco)
+                </label>
+
+                <!-- Switch: siempre como grupo (carpeta "<juego>.nsp/" que ES-DE
+                     muestra como UN solo juego). Base obligatorio + updates y
+                     DLCs opcionales, cada uno en su propia zona: el rol sale de
+                     la zona donde se suelta, sin tener que marcarlo a mano. -->
+                <div id="rl-switch-campos" style="display:none;">
+                    <label for="rl-switch-nombre">Nombre del juego</label>
+                    <input type="text" id="rl-switch-nombre" placeholder="ej. Pokemon Arceus">
+
+                    <label>Juego base (.nsp / .xci)</label>
+                    <div class="rl-drop" id="rl-drop-switch-base">Arrastra aquí el juego base, o haz clic para elegirlo</div>
+                    <input type="file" id="rl-input-switch-base" accept=".nsp,.xci" style="display:none;">
+
+                    <label style="display:block;margin-top:12px;">
+                        <input type="checkbox" id="rl-switch-con-updates"> Subo updates
+                    </label>
+                    <div id="rl-switch-updates" style="display:none;">
+                        <div class="rl-drop" id="rl-drop-switch-updates">Arrastra aquí los updates (uno o varios)</div>
+                        <input type="file" id="rl-input-switch-updates" accept=".nsp,.xci" multiple style="display:none;">
+                    </div>
+
+                    <label style="display:block;margin-top:12px;">
+                        <input type="checkbox" id="rl-switch-con-dlcs"> El juego tiene DLCs
+                    </label>
+                    <div id="rl-switch-dlcs" style="display:none;">
+                        <div class="rl-drop" id="rl-drop-switch-dlcs">Arrastra aquí los DLCs (uno o varios)</div>
+                        <input type="file" id="rl-input-switch-dlcs" accept=".nsp,.xci" multiple style="display:none;">
+                    </div>
+                </div>
+
+                <div id="rl-modo-simple-campos">
+                    <p id="rl-aviso-rpgmaker" style="display:none;color:#9fb3c8;font-size:0.9em;">
+                        RPG Maker no es una ROM: comprime tú mismo la carpeta ENTERA del juego
+                        (Game.exe + Data/ + Graphics/ + Audio/...) en un .zip y súbelo aquí.
+                        Se juega en el dispositivo con Kirin, no con ES-DE.
+                    </p>
+                    <label for="rl-nombre">Nombre del fichero (con extensión)</label>
+                    <input type="text" id="rl-nombre" placeholder="ej. zelda_oot.gb">
+
+                    <label>ROM</label>
+                    <div class="rl-drop" id="rl-drop-rom">Arrastra el fichero aquí, o haz clic para elegirlo</div>
+                    <input type="file" id="rl-input-rom" style="display:none;">
+                </div>
+
+                <div id="rl-modo-grupo-campos" style="display:none;">
+                    <label for="rl-nombre-juego">Nombre del juego (sin extensión, será la carpeta)</label>
+                    <input type="text" id="rl-nombre-juego" placeholder="ej. Ape Escape La Invasion de los Monos">
+
+                    <div id="rl-modo-grupo-discos">
+                        <label style="display:block;margin-top:6px;">
+                            <input type="checkbox" id="rl-multidisco"> Multidisco (genera el .m3u automáticamente)
+                        </label>
+
+                        <label>Ficheros .cue (uno por disco, EN ORDEN de disco)</label>
+                        <div class="rl-drop" id="rl-drop-cues">Arrastra aquí los .cue, o haz clic para elegirlos</div>
+                        <input type="file" id="rl-input-cues" accept=".cue" multiple style="display:none;">
+
+                        <label>Ficheros de datos (.bin / .iso / .chd)</label>
+                        <div class="rl-drop" id="rl-drop-discos">Arrastra aquí los .bin/.iso/.chd, o haz clic para elegirlos</div>
+                        <input type="file" id="rl-input-discos" multiple style="display:none;">
+                    </div>
+
+                </div>
+
+                <label>Carátula (opcional — solo si es tuya, nunca se descarga sola)</label>
+                <div class="rl-drop" id="rl-drop-cover">Arrastra una imagen aquí, o haz clic para elegirla</div>
+                <input type="file" id="rl-input-cover" accept="image/*" style="display:none;">
+
+                <button class="rl-btn" id="rl-confirmar">Confirmar</button>
+                <div class="rl-msg" id="rl-msg"></div>
+            </div>
+
+            <div class="server-card rl-panel rl-biblioteca">
+                <h2>&gt; Biblioteca_</h2>
+
+                <div class="rl-filtros">
+                    <select id="rl-filtro-sistema">
+                        <option value="">Todas las consolas</option>
+                        <option value="gb">GameBoy</option>
+                        <option value="gbc">GameBoy Color</option>
+                        <option value="gba">GameBoy Advance</option>
+                        <option value="n64">N64</option>
+                        <option value="gc">GameCube</option>
+                        <option value="switch">Switch</option>
+                        <option value="psx">PlayStation</option>
+                        <option value="ps2">PlayStation 2</option>
+                        <option value="psp">PSP</option>
+                        <option value="rpgmaker">RPG Maker (Kirin)</option>
+                    </select>
+                    <select id="rl-filtro-libreria">
+                        <option value="todas">Todas las librerías</option>
+                        <option value="personal">Librería personal</option>
+                        <option value="otras">Otras librerías</option>
+                    </select>
+                    <input type="text" id="rl-filtro-nombre" placeholder="Buscar por nombre...">
+                </div>
+                <div id="rl-copias" class="rl-copias"></div>
+
+                <div class="rl-grid" id="rl-grid"></div>
+            </div>
+
+        </div>
+    </section>
+
+    <dialog class="server-card rl-panel rl-dialogo" id="rl-dialogo-editar">
+        <h2>&gt; Editar juego_</h2>
+        <div style="font-size:12px;color:#6f8f6f;" id="rl-edit-actual"></div>
+
+        <label for="rl-edit-nombre">Nombre</label>
+        <div class="rl-edit-nombre-fila">
+            <input type="text" id="rl-edit-nombre">
+            <span class="rl-edit-ext" id="rl-edit-ext"></span>
+        </div>
+        <div class="rl-edit-aviso">
+            Al renombrar se mueven también la carátula y los guardados de todas las consolas.
+            Si el juego está instalado en alguna consola, desinstálalo antes desde la app
+            (así su guardado sube al servidor) y vuelve a instalarlo después.
+        </div>
+
+        <label>Carátula</label>
+        <div class="rl-edit-cover">
+            <div class="rl-card-cover" id="rl-edit-preview">SIN CARÁTULA</div>
+            <div class="rl-drop" id="rl-drop-edit-cover">Arrastra una imagen nueva aquí, o haz clic para elegirla</div>
+            <input type="file" id="rl-input-edit-cover" accept="image/png,image/jpeg,image/webp" style="display:none;">
+        </div>
+
+        <div class="rl-msg" id="rl-edit-msg"></div>
+        <div class="rl-edit-botones">
+            <button class="rl-btn rl-btn-secundario" id="rl-edit-cancelar">Cancelar</button>
+            <button class="rl-btn" id="rl-edit-guardar">Guardar</button>
+        </div>
+    </dialog>
+
+    <script>
+        const rlNombresConsola = { gb: 'GameBoy', gbc: 'GameBoy Color', gba: 'GameBoy Advance', n64: 'N64', gc: 'GameCube', switch: 'Switch', psx: 'PlayStation', ps2: 'PlayStation 2', psp: 'PSP', rpgmaker: 'RPG Maker' };
+
+        function rlSetupDrop(dropId, inputId, textoVacio, onFile) {
+            const drop = document.getElementById(dropId);
+            const input = document.getElementById(inputId);
+            drop.addEventListener('click', () => input.click());
+            drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('rl-drop-over'); });
+            drop.addEventListener('dragleave', () => drop.classList.remove('rl-drop-over'));
+            drop.addEventListener('drop', (e) => {
+                e.preventDefault();
+                drop.classList.remove('rl-drop-over');
+                if (e.dataTransfer.files.length > 0) {
+                    input.files = e.dataTransfer.files;
+                    rlActualizarDrop(drop, input, textoVacio, onFile);
+                }
+            });
+            input.addEventListener('change', () => rlActualizarDrop(drop, input, textoVacio, onFile));
+        }
+
+        function rlActualizarDrop(drop, input, textoVacio, onFile) {
+            if (input.files.length > 0) {
+                drop.textContent = input.files[0].name;
+                drop.classList.add('rl-drop-filled');
+                if (onFile) onFile(input.files[0]);
+            } else {
+                drop.textContent = textoVacio;
+                drop.classList.remove('rl-drop-filled');
+            }
+        }
+
+        // Por defecto, nombre y extensión se toman del propio fichero subido —
+        // el campo sigue siendo editable si el staff quiere ponerle otro nombre.
+        rlSetupDrop('rl-drop-rom', 'rl-input-rom', 'Arrastra el fichero aquí, o haz clic para elegirlo', (file) => {
+            document.getElementById('rl-nombre').value = file.name;
+        });
+        rlSetupDrop('rl-drop-cover', 'rl-input-cover', 'Arrastra una imagen aquí, o haz clic para elegirla');
+
+        // Zonas de drop MÚLTIPLES (varios ficheros a la vez) para el modo
+        // "juego de varios ficheros" -- separadas a propósito .cue de
+        // datos (.bin/.iso/.chd): el orden en que se sueltan los .cue es el
+        // orden real de los discos que acaba en el .m3u.
+        function rlSetupDropMultiple(dropId, inputId, textoVacio) {
+            const drop = document.getElementById(dropId);
+            const input = document.getElementById(inputId);
+            const refrescar = () => {
+                if (input.files.length > 0) {
+                    drop.textContent = Array.from(input.files).map((f) => f.name).join(', ');
+                    drop.classList.add('rl-drop-filled');
+                } else {
+                    drop.textContent = textoVacio;
+                    drop.classList.remove('rl-drop-filled');
+                }
+            };
+            drop.addEventListener('click', () => input.click());
+            drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('rl-drop-over'); });
+            drop.addEventListener('dragleave', () => drop.classList.remove('rl-drop-over'));
+            drop.addEventListener('drop', (e) => {
+                e.preventDefault();
+                drop.classList.remove('rl-drop-over');
+                if (e.dataTransfer.files.length > 0) {
+                    input.files = e.dataTransfer.files;
+                    refrescar();
+                }
+            });
+            input.addEventListener('change', refrescar);
+        }
+        rlSetupDropMultiple('rl-drop-cues', 'rl-input-cues', 'Arrastra aquí los .cue, o haz clic para elegirlos');
+        rlSetupDropMultiple('rl-drop-discos', 'rl-input-discos', 'Arrastra aquí los .bin/.iso/.chd, o haz clic para elegirlos');
+        rlSetupDropMultiple('rl-drop-switch-updates', 'rl-input-switch-updates', 'Arrastra aquí los updates (uno o varios)');
+        rlSetupDropMultiple('rl-drop-switch-dlcs', 'rl-input-switch-dlcs', 'Arrastra aquí los DLCs (uno o varios)');
+
+        // Nombre del juego sugerido a partir del base: sin extensión ni
+        // etiquetas tipo "(base)", "[0100ABCD...]", "[v0]". Solo si el staff
+        // no lo ha escrito ya él (o si el anterior también era sugerido).
+        let rlNombreSwitchSugerido = '';
+        rlSetupDrop('rl-drop-switch-base', 'rl-input-switch-base', 'Arrastra aquí el juego base, o haz clic para elegirlo', (file) => {
+            const campo = document.getElementById('rl-switch-nombre');
+            const sugerido = file.name.replace(/\.(nsp|xci)$/i, '').replace(/\s*[\[(][^\])]*[\])]/g, '').trim();
+            if (!campo.value.trim() || campo.value === rlNombreSwitchSugerido) {
+                campo.value = sugerido;
+                rlNombreSwitchSugerido = sugerido;
+            }
+        });
+        for (const [check, zona] of [['rl-switch-con-updates', 'rl-switch-updates'], ['rl-switch-con-dlcs', 'rl-switch-dlcs']]) {
+            document.getElementById(check).addEventListener('change', (e) => {
+                document.getElementById(zona).style.display = e.target.checked ? 'block' : 'none';
+            });
+        }
+
+        // Qué campos se ven: Switch tiene su propio panel (base/updates/DLCs)
+        // y no usa el checkbox de "varios ficheros"; el resto de sistemas
+        // alterna entre fichero suelto y grupo (cue+bin, multidisco).
+        function rlActualizarSubmodoGrupo() {
+            const esSwitch = document.getElementById('rl-sistema').value === 'switch';
+            const grupo = document.getElementById('rl-modo-grupo').checked;
+            document.getElementById('rl-switch-campos').style.display = esSwitch ? 'block' : 'none';
+            document.getElementById('rl-label-modo-grupo').style.display = esSwitch ? 'none' : 'block';
+            document.getElementById('rl-modo-simple-campos').style.display = !esSwitch && !grupo ? 'block' : 'none';
+            document.getElementById('rl-modo-grupo-campos').style.display = !esSwitch && grupo ? 'block' : 'none';
+        }
+
+        document.getElementById('rl-modo-grupo').addEventListener('change', rlActualizarSubmodoGrupo);
+
+        // Extensiones reales aceptadas por consola (2026-09-19, corregido tras
+        // confirmar con el usuario los formatos reales que usan sus emuladores):
+        // la mayoría van por núcleos de RetroArch, que aceptan el propio ROM
+        // en crudo O comprimido en .zip -- Switch usa sus formatos reales
+        // (nsp/xci), nunca ".switch" (no existe de verdad).
+        const RL_EXTENSIONES = {
+            gb: ['.gb', '.zip'],
+            gbc: ['.gbc', '.zip'],
+            gba: ['.gba', '.zip'],
+            n64: ['.n64', '.z64', '.v64', '.zip'],
+            gc: ['.iso', '.gcm', '.rvz', '.zip'],
+            switch: ['.nsp', '.xci'],
+            psx: ['.bin', '.cue', '.chd', '.zip'],
+            ps2: ['.iso', '.chd', '.zip'],
+            psp: ['.iso', '.cso', '.zip'],
+            rpgmaker: ['.zip'],
+        };
+
+        function rlActualizarExtensionEsperada() {
+            const sistema = document.getElementById('rl-sistema').value;
+            const exts = RL_EXTENSIONES[sistema] || [];
+            document.getElementById('rl-input-rom').setAttribute('accept', exts.join(','));
+            document.getElementById('rl-nombre').placeholder = 'ej. juego' + (exts[0] || '');
+            document.getElementById('rl-aviso-rpgmaker').style.display = sistema === 'rpgmaker' ? 'block' : 'none';
+            rlActualizarSubmodoGrupo();
+        }
+        document.getElementById('rl-sistema').addEventListener('change', rlActualizarExtensionEsperada);
+        rlActualizarExtensionEsperada();
+
+        document.getElementById('rl-confirmar').addEventListener('click', async () => {
+            const msg = document.getElementById('rl-msg');
+            const sistema = document.getElementById('rl-sistema').value;
+            const coverInput = document.getElementById('rl-input-cover');
+            const esGrupo = document.getElementById('rl-modo-grupo').checked;
+
+            let form;
+            if (sistema === 'switch') {
+                const nombreJuego = document.getElementById('rl-switch-nombre').value.trim();
+                const base = document.getElementById('rl-input-switch-base').files[0];
+                const conUpdates = document.getElementById('rl-switch-con-updates').checked;
+                const conDlcs = document.getElementById('rl-switch-con-dlcs').checked;
+                const updates = conUpdates ? [...document.getElementById('rl-input-switch-updates').files] : [];
+                const dlcs = conDlcs ? [...document.getElementById('rl-input-switch-dlcs').files] : [];
+
+                let error = null;
+                if (!nombreJuego || /[\\/]/.test(nombreJuego)) error = 'Falta el nombre del juego (sin / ni \\).';
+                else if (!base) error = 'Falta el juego base.';
+                else if (conUpdates && updates.length === 0) error = 'Has marcado "Subo updates" pero no has elegido ninguno.';
+                else if (conDlcs && dlcs.length === 0) error = 'Has marcado "El juego tiene DLCs" pero no has elegido ninguno.';
+                const todos = [base, ...updates, ...dlcs].filter(Boolean);
+                const extsPermitidas = RL_EXTENSIONES[sistema] || [];
+                const invalido = todos.find((f) => !extsPermitidas.some((ext) => f.name.toLowerCase().endsWith(ext)));
+                if (!error && invalido) error = 'Extensión no válida en "' + invalido.name + '". Se acepta: ' + extsPermitidas.join(', ');
+                const nombres = todos.map((f) => f.name);
+                const repetido = nombres.find((n, i) => nombres.indexOf(n) !== i);
+                if (!error && repetido) error = '"' + repetido + '" está elegido dos veces.';
+                if (error) {
+                    msg.textContent = error;
+                    msg.style.color = '#ff8a8a';
+                    return;
+                }
+
+                // El rol sale de la zona donde se soltó cada fichero.
+                const rolesPorNombre = { [base.name]: 'base' };
+                updates.forEach((f) => { rolesPorNombre[f.name] = 'update'; });
+                dlcs.forEach((f) => { rolesPorNombre[f.name] = 'dlc'; });
+
+                form = new FormData();
+                form.append('modo', 'grupo');
+                form.append('sistema', sistema);
+                form.append('nombre_juego', nombreJuego);
+                form.append('es_multidisco', '0');
+                form.append('roles_json', JSON.stringify(rolesPorNombre));
+                todos.forEach((f) => form.append('ficheros[]', f));
+            } else if (esGrupo) {
+                const nombreJuego = document.getElementById('rl-nombre-juego').value.trim();
+                const cuesInput = document.getElementById('rl-input-cues');
+                const discosInput = document.getElementById('rl-input-discos');
+                const multidisco = document.getElementById('rl-multidisco').checked;
+                const todosFicheros = [...cuesInput.files, ...discosInput.files];
+
+                if (!nombreJuego || todosFicheros.length === 0) {
+                    msg.textContent = 'Falta el nombre del juego o los ficheros.';
+                    msg.style.color = '#ff8a8a';
+                    return;
+                }
+                if (multidisco && cuesInput.files.length < 2) {
+                    msg.textContent = 'Multidisco necesita al menos 2 ficheros .cue (uno por disco).';
+                    msg.style.color = '#ff8a8a';
+                    return;
+                }
+                const extsPermitidas = RL_EXTENSIONES[sistema] || [];
+                const invalido = todosFicheros.find((f) => !extsPermitidas.some((ext) => f.name.toLowerCase().endsWith(ext)));
+                if (invalido) {
+                    msg.textContent = 'Extensión no válida en "' + invalido.name + '". Se acepta: ' + extsPermitidas.join(', ');
+                    msg.style.color = '#ff8a8a';
+                    return;
+                }
+
+                form = new FormData();
+                form.append('modo', 'grupo');
+                form.append('sistema', sistema);
+                form.append('nombre_juego', nombreJuego);
+                form.append('es_multidisco', multidisco ? '1' : '0');
+                todosFicheros.forEach((f) => form.append('ficheros[]', f));
+            } else {
+                const nombre = document.getElementById('rl-nombre').value.trim();
+                const romInput = document.getElementById('rl-input-rom');
+                if (!nombre || romInput.files.length === 0) {
+                    msg.textContent = 'Falta el nombre o el fichero de ROM.';
+                    msg.style.color = '#ff8a8a';
+                    return;
+                }
+                // Cada sistema solo acepta su propia extensión (misma clave que la
+                // carpeta: .gb, .gbc, .gba, .n64, .gc, .switch, .psx, .ps2).
+                const extsPermitidas = RL_EXTENSIONES[sistema] || [];
+                const nombreMin = nombre.toLowerCase();
+                if (!extsPermitidas.some((ext) => nombreMin.endsWith(ext))) {
+                    msg.textContent = 'Extensión no válida para esta consola. Debe ser: ' + extsPermitidas.join(', ');
+                    msg.style.color = '#ff8a8a';
+                    return;
+                }
+                form = new FormData();
+                form.append('sistema', sistema);
+                form.append('nombre', nombre);
+                form.append('rom', romInput.files[0]);
+            }
+            if (coverInput.files.length > 0) form.append('cover', coverInput.files[0]);
+
+            const btn = document.getElementById('rl-confirmar');
+            btn.disabled = true;
+            msg.textContent = 'Subiendo...';
+            msg.style.color = '#9fd9a0';
+            rlUltimoTamano = 0;
+            for (const [, valor] of form.entries()) if (valor instanceof File) rlUltimoTamano += valor.size;
+
+            try {
+                const data = await rlSubirConProgreso(form, msg);
+                if (data.success) {
+                    msg.textContent = 'Subido correctamente.';
+                    msg.style.color = '#7bffb0';
+                    document.getElementById('rl-nombre').value = '';
+                    document.getElementById('rl-nombre-juego').value = '';
+                    document.getElementById('rl-input-rom').value = '';
+                    document.getElementById('rl-input-cues').value = '';
+                    document.getElementById('rl-input-discos').value = '';
+                    for (const id of ['rl-input-switch-base', 'rl-input-switch-updates', 'rl-input-switch-dlcs']) {
+                        document.getElementById(id).value = '';
+                        document.getElementById(id).dispatchEvent(new Event('change'));
+                    }
+                    document.getElementById('rl-switch-nombre').value = '';
+                    coverInput.value = '';
+                    rlActualizarDrop(document.getElementById('rl-drop-rom'), document.getElementById('rl-input-rom'), 'Arrastra el fichero aquí, o haz clic para elegirlo');
+                    rlActualizarDrop(document.getElementById('rl-drop-cover'), coverInput, 'Arrastra una imagen aquí, o haz clic para elegirla');
+                    document.getElementById('rl-input-cues').dispatchEvent(new Event('change'));
+                    document.getElementById('rl-input-discos').dispatchEvent(new Event('change'));
+                    rlCargarJuegos();
+                } else {
+                    msg.textContent = 'Error: ' + data.message;
+                    msg.style.color = '#ff8a8a';
+                }
+            } catch (e) {
+                msg.textContent = 'Error: ' + e.message;
+                msg.style.color = '#ff8a8a';
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // ---------- Peticiones al backend ----------
+        // Si la sesión de Authentik caduca, sund.es responde con una
+        // redirección al login (otro dominio) que el navegador bloquea dentro
+        // de un fetch: salía un "NetworkError" sin explicación. Con
+        // redirect:'manual' esa redirección se detecta y se explica.
+        const RL_SESION_CADUCADA = 'Tu sesión ha caducado. Abre esta página en OTRA pestaña para volver a entrar '
+            + '(no recargues esta si hay una subida en curso).';
+
+        async function rlFetch(url, opciones = {}) {
+            const resp = await fetch(url, { ...opciones, redirect: 'manual' });
+            if (resp.type === 'opaqueredirect' || (resp.status >= 300 && resp.status < 400)) {
+                throw new Error(RL_SESION_CADUCADA);
+            }
+            return resp;
+        }
+
+        function rlFormatoGB(bytes) {
+            return (bytes / 1e9).toFixed(1).replace('.', ',') + ' GB';
+        }
+
+        // Subida con XMLHttpRequest (fetch no informa del progreso de envío):
+        // barra con % mientras el navegador envía; al terminar, el servidor
+        // aún tiene que copiarlo a jarjar (varios minutos con juegos grandes)
+        // y se avisa de ello en vez de dejar un "Subiendo..." eterno.
+        function rlSubirConProgreso(form, msg) {
+            return new Promise((resolver, rechazar) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', 'api/juegos');
+                xhr.responseType = 'json';
+                // Firefox no dispara upload.onload hasta que el servidor responde
+                // (que es al final de TODO): el aviso de "copiando" se pone
+                // en cuanto el progreso llega al 100%.
+                const avisarCopiando = () => {
+                    const minutos = Math.max(1, Math.round(rlUltimoTamano / 5.5e6 / 60));
+                    msg.textContent = 'Recibido. Copiando a la librería en el servidor... '
+                        + (minutos > 1 ? '(unos ' + minutos + ' min) ' : '') + 'No cierres ni recargues esta pestaña.';
+                };
+                xhr.upload.onprogress = (e) => {
+                    if (!e.lengthComputable) return;
+                    if (e.loaded >= e.total) return avisarCopiando();
+                    const pct = Math.floor(e.loaded * 100 / e.total);
+                    msg.textContent = 'Subiendo ' + pct + '% · ' + rlFormatoGB(e.loaded) + ' de ' + rlFormatoGB(e.total)
+                        + ' (no cierres ni recargues esta pestaña)';
+                };
+                xhr.upload.onload = avisarCopiando;
+                xhr.onload = () => {
+                    if (xhr.status >= 300 && xhr.status < 400) return rechazar(new Error(RL_SESION_CADUCADA));
+                    const data = xhr.response;
+                    if (data && typeof data === 'object') return resolver(data);
+                    rechazar(new Error('Respuesta inesperada del servidor (HTTP ' + xhr.status + ')'));
+                };
+                xhr.onerror = () => rechazar(new Error('se cortó la conexión con el servidor (o la sesión caducó)'));
+                xhr.send(form);
+            });
+        }
+        let rlUltimoTamano = 0;
+
+        async function rlCargarJuegos() {
+            const grid = document.getElementById('rl-grid');
+            const sistema = document.getElementById('rl-filtro-sistema').value;
+            const q = document.getElementById('rl-filtro-nombre').value.trim();
+
+            const params = new URLSearchParams();
+            if (sistema) params.set('sistema', sistema);
+            params.set('libreria', document.getElementById('rl-filtro-libreria').value);
+            if (q) params.set('q', q);
+
+            grid.innerHTML = '<p style="color:#6f8f6f;">Cargando...</p>';
+            try {
+                const resp = await rlFetch('api/juegos?' + params.toString());
+                const data = await resp.json();
+                if (!data.success) {
+                    grid.innerHTML = '<p style="color:#ff8a8a;">' + rlEscapar(data.message) + '</p>';
+                    return;
+                }
+                const juegos = data.data || [];
+                if (juegos.length === 0) {
+                    grid.innerHTML = '<p style="color:#6f8f6f;">Sin juegos todavía.</p>';
+                    return;
+                }
+                grid.innerHTML = '';
+                for (const juego of juegos) {
+                    const card = document.createElement('div');
+                    card.className = 'rl-card';
+
+                    const cover = document.createElement('div');
+                    cover.className = 'rl-card-cover';
+                    if (juego.coverUrl) {
+                        // coverUrl viene como "/api/cover/<sistema>/<nombre_real_caratula>"
+                        // (jarjar) — el nombre real de la carátula NO es el mismo que el
+                        // del ROM (misma base, extensión de imagen distinta: .png/.jpg/.webp
+                        // en vez de .gba/.n64/etc), hay que extraerlo de ahí, no reusar
+                        // juego.filename (bug real, 2026-09-19: pedía un fichero que no existe).
+                        const img = document.createElement('img');
+                        img.src = rlUrlCaratula(juego);
+                        img.loading = 'lazy';
+                        cover.appendChild(img);
+                    } else {
+                        cover.textContent = 'SIN CARÁTULA';
+                    }
+
+                    const body = document.createElement('div');
+                    body.className = 'rl-card-body';
+                    const ajeno = !!juego.origen;
+                    body.innerHTML = '<span class="rl-card-sys">' + rlEscapar(rlNombresConsola[juego.system] || juego.system) + '</span>' +
+                        (ajeno ? '<span class="rl-card-lib" title="Juego de otra librería pública">' + rlEscapar(juego.libreria) + '</span>' : '') +
+                        '<div class="rl-card-nombre">' + rlEscapar(juego.filename) + '</div>';
+
+                    const acciones = document.createElement('div');
+                    acciones.className = 'rl-card-acciones';
+                    // Enlace normal con download: el navegador gestiona la
+                    // descarga él solo (barra de progreso, reanudar...), sin
+                    // pasar los bytes por JS -- importante con ROMs de GB.
+                    const descargar = document.createElement('a');
+                    descargar.className = 'rl-card-descargar';
+                    descargar.textContent = juego.esGrupo ? 'Descargar (.zip)' : 'Descargar';
+                    descargar.href = 'api/juegos?' + new URLSearchParams({
+                        accion: 'descargar', sistema: juego.system, nombre: juego.filename, ...(ajeno ? { origen: juego.origen } : {}) });
+                    descargar.setAttribute('download', juego.esGrupo ? juego.filename + '.zip' : juego.filename);
+                    acciones.appendChild(descargar);
+                    if (ajeno) {
+                        // De otra librería: NUNCA editable (el servidor tampoco
+                        // lo permitiría); solo descargar o copiar a la personal.
+                        const copiar = document.createElement('button');
+                        copiar.className = 'rl-card-edit';
+                        copiar.textContent = 'Copiar a mi librería';
+                        copiar.addEventListener('click', () => rlCopiarJuego(juego));
+                        acciones.appendChild(copiar);
+                    } else {
+                        const edit = document.createElement('button');
+                        edit.className = 'rl-card-edit';
+                        edit.textContent = 'Editar';
+                        edit.addEventListener('click', () => rlAbrirEditar(juego));
+                        const del = document.createElement('button');
+                        del.className = 'rl-card-del';
+                        del.textContent = 'Borrar';
+                        del.addEventListener('click', () => rlBorrarJuego(juego.system, juego.filename));
+                        acciones.appendChild(edit);
+                        acciones.appendChild(del);
+                    }
+                    body.appendChild(acciones);
+
+                    card.appendChild(cover);
+                    card.appendChild(body);
+                    grid.appendChild(card);
+                }
+            } catch (e) {
+                grid.innerHTML = '<p style="color:#ff8a8a;">Error: ' + rlEscapar(e.message) + '</p>';
+            }
+        }
+
+        // Carátulas que se acaban de cambiar en esta sesión: el proxy las
+        // sirve con caché de 1h, así que se les añade un parámetro distinto
+        // para que el navegador pida la nueva en vez de enseñar la vieja.
+        const rlVersionCaratula = {};
+
+        function rlUrlCaratula(juego) {
+            // coverUrl acaba en el nombre REAL de la carátula (misma base que
+            // el ROM pero extensión de imagen), no se reconstruye desde filename.
+            const nombreCaratula = decodeURIComponent(juego.coverUrl.split('/').pop());
+            const version = rlVersionCaratula[juego.system + '/' + nombreCaratula];
+            const params = { sistema: juego.system, nombre: nombreCaratula };
+            if (juego.origen) params.origen = juego.origen;
+            if (version) params.v = version;
+            return 'api/caratula?' + new URLSearchParams(params);
+        }
+
+        function rlEscapar(texto) {
+            return String(texto ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+        }
+
+        // ---------- Copiar un juego de otra librería a la personal ----------
+        async function rlCopiarJuego(juego) {
+            const nombre = prompt('Nombre con el que se guardará en tu librería:', juego.filename);
+            if (!nombre) return;
+            try {
+                const resp = await rlFetch('api/copiar', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ origen: juego.origen, sistema: juego.system, fichero: juego.filename, nuevo_nombre: nombre.trim() }),
+                });
+                const data = await resp.json();
+                if (data.ok || data.success) {
+                    rlCargarCopias();
+                } else {
+                    alert('Error: ' + (data.message || data.detail));
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        let rlTemporizadorCopias = null;
+        async function rlCargarCopias() {
+            const cont = document.getElementById('rl-copias');
+            try {
+                const data = await (await rlFetch('api/copias')).json();
+                const copias = (data.data || []).filter((c) => c.estado !== 'hecha' || Date.now() / 1000 - c.creada < 600);
+                cont.innerHTML = copias.map((c) => {
+                    const pct = c.bytes_total ? Math.floor(c.bytes_hechos * 100 / c.bytes_total) : 0;
+                    const estado = { pendiente: 'En cola', copiando: 'Copiando ' + pct + '%', hecha: 'Copiado ✓', error: 'Error: ' + rlEscapar(c.detalle) }[c.estado] || c.estado;
+                    return '<div class="rl-copia rl-copia-' + c.estado + '">' + rlEscapar(c.nuevo_nombre) + ' · ' + estado + '</div>';
+                }).join('');
+                const activas = copias.some((c) => c.estado === 'pendiente' || c.estado === 'copiando');
+                clearTimeout(rlTemporizadorCopias);
+                if (activas) {
+                    rlTemporizadorCopias = setTimeout(rlCargarCopias, 3000);
+                } else if (copias.some((c) => c.estado === 'hecha')) {
+                    rlCargarJuegos();
+                }
+            } catch (e) {
+                cont.textContent = '';
+            }
+        }
+
+        // ---------- Editar (renombrar + cambiar carátula) ----------
+        let rlJuegoEditando = null;
+        const rlDialogo = document.getElementById('rl-dialogo-editar');
+        const RL_TEXTO_DROP_EDIT = 'Arrastra una imagen nueva aquí, o haz clic para elegirla';
+
+        // Se edita solo el nombre base: la extensión se mantiene fija. En un
+        // ROM suelto, cambiarla rompería el tipo de fichero; en los grupos de
+        // PS1/PS2 la carpeta se llama "<juego>.cue"/".m3u" a propósito (ES-DE
+        // la muestra como UN solo juego, sin carpeta ni pistas sueltas). Los
+        // grupos de Switch/RPG Maker no llevan extensión.
+        const RL_EXT_GRUPO_DISCO = ['.m3u', '.cue', '.iso', '.chd'];
+        function rlPartirNombre(juego) {
+            const punto = juego.filename.lastIndexOf('.');
+            if (punto <= 0) return { base: juego.filename, ext: '' };
+            const ext = juego.filename.slice(punto);
+            if (juego.esGrupo && !RL_EXT_GRUPO_DISCO.includes(ext.toLowerCase())) return { base: juego.filename, ext: '' };
+            return { base: juego.filename.slice(0, punto), ext };
+        }
+
+        function rlAbrirEditar(juego) {
+            rlJuegoEditando = juego;
+            const partes = rlPartirNombre(juego);
+            document.getElementById('rl-edit-actual').textContent =
+                (rlNombresConsola[juego.system] || juego.system) + ' · ' + juego.filename;
+            document.getElementById('rl-edit-nombre').value = partes.base;
+            document.getElementById('rl-edit-ext').textContent = partes.ext;
+
+            const preview = document.getElementById('rl-edit-preview');
+            preview.innerHTML = '';
+            if (juego.coverUrl) {
+                const img = document.createElement('img');
+                img.src = rlUrlCaratula(juego);
+                preview.appendChild(img);
+            } else {
+                preview.textContent = 'SIN CARÁTULA';
+            }
+
+            const input = document.getElementById('rl-input-edit-cover');
+            input.value = '';
+            rlActualizarDrop(document.getElementById('rl-drop-edit-cover'), input, RL_TEXTO_DROP_EDIT);
+            const msg = document.getElementById('rl-edit-msg');
+            msg.textContent = '';
+            document.getElementById('rl-edit-guardar').disabled = false;
+            rlDialogo.showModal();
+            document.getElementById('rl-edit-nombre').focus();
+        }
+
+        // Vista previa inmediata de la imagen elegida, antes de guardar.
+        rlSetupDrop('rl-drop-edit-cover', 'rl-input-edit-cover', RL_TEXTO_DROP_EDIT, (file) => {
+            const preview = document.getElementById('rl-edit-preview');
+            preview.innerHTML = '';
+            const img = document.createElement('img');
+            img.src = URL.createObjectURL(file);
+            preview.appendChild(img);
+        });
+
+        document.getElementById('rl-edit-cancelar').addEventListener('click', () => rlDialogo.close());
+
+        document.getElementById('rl-edit-guardar').addEventListener('click', async () => {
+            const juego = rlJuegoEditando;
+            if (!juego) return;
+            const msg = document.getElementById('rl-edit-msg');
+            const partes = rlPartirNombre(juego);
+            const base = document.getElementById('rl-edit-nombre').value.trim();
+            const coverInput = document.getElementById('rl-input-edit-cover');
+
+            if (!base || /[\\/]/.test(base)) {
+                msg.textContent = 'Nombre no válido (no puede estar vacío ni contener / o \\).';
+                msg.style.color = '#ff8a8a';
+                return;
+            }
+            const nuevoNombre = base + partes.ext;
+            const renombrar = nuevoNombre !== juego.filename;
+            const cambiarCaratula = coverInput.files.length > 0;
+            if (!renombrar && !cambiarCaratula) {
+                rlDialogo.close();
+                return;
+            }
+
+            const btn = document.getElementById('rl-edit-guardar');
+            btn.disabled = true;
+            msg.style.color = '#9fd9a0';
+            try {
+                let nombreActual = juego.filename;
+                if (renombrar) {
+                    msg.textContent = 'Renombrando...';
+                    const form = new FormData();
+                    form.append('modo', 'renombrar');
+                    form.append('sistema', juego.system);
+                    form.append('nombre', juego.filename);
+                    form.append('nuevo_nombre', nuevoNombre);
+                    const data = await (await rlFetch('api/juegos', { method: 'POST', body: form })).json();
+                    if (!data.success) throw new Error(data.message);
+                    nombreActual = nuevoNombre;
+                }
+                if (cambiarCaratula) {
+                    msg.textContent = 'Subiendo carátula...';
+                    const form = new FormData();
+                    form.append('modo', 'caratula');
+                    form.append('sistema', juego.system);
+                    form.append('nombre', nombreActual);
+                    form.append('cover', coverInput.files[0]);
+                    const data = await (await rlFetch('api/juegos', { method: 'POST', body: form })).json();
+                    if (!data.success) throw new Error(data.message);
+                    // jarjar guarda la carátula como <nombre base>.png/.jpg: se
+                    // invalidan ambas variantes en la caché del navegador.
+                    const baseActual = rlPartirNombre({ filename: nombreActual, esGrupo: juego.esGrupo }).base;
+                    for (const ext of ['.png', '.jpg']) rlVersionCaratula[juego.system + '/' + baseActual + ext] = Date.now();
+                }
+                rlDialogo.close();
+                rlCargarJuegos();
+            } catch (e) {
+                msg.textContent = 'Error: ' + e.message;
+                msg.style.color = '#ff8a8a';
+                btn.disabled = false;
+            }
+        });
+
+        document.getElementById('rl-edit-nombre').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') document.getElementById('rl-edit-guardar').click();
+        });
+
+        async function rlBorrarJuego(sistema, nombre) {
+            if (!confirm('¿Borrar "' + nombre + '" de la librería de jarjar? Esta acción no se puede deshacer.')) return;
+            try {
+                const resp = await rlFetch('api/juegos', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sistema, nombre })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    rlCargarJuegos();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        function rlFormatoBytes(bytes) {
+            if (bytes >= 1e12) return (bytes / 1e12).toFixed(2) + ' TB';
+            if (bytes >= 1e9) return (bytes / 1e9).toFixed(2) + ' GB';
+            if (bytes >= 1e6) return (bytes / 1e6).toFixed(1) + ' MB';
+            return bytes + ' B';
+        }
+
+        async function rlCargarUsoDisco() {
+            const barra = document.getElementById('rl-disk-bar');
+            const leyenda = document.getElementById('rl-disk-leyenda');
+            const total = document.getElementById('rl-disk-total');
+            try {
+                const resp = await rlFetch('api/disco');
+                const data = await resp.json();
+                if (!data.success) {
+                    total.textContent = 'No se pudo leer el uso de disco: ' + data.message;
+                    total.style.color = '#ff8a8a';
+                    return;
+                }
+                const d = data.data;
+                // Categorías que manda el servicio (ROMs y las extra que se
+                // configuren, p.ej. películas/series en sund.es) + "Otros"
+                // (todo lo demás del disco) + libre.
+                const colores = ['#ffd166', '#7bffb0', '#4fa9ff', '#ff9ff3', '#c8a2ff'];
+                const segmentos = Object.entries(d.categorias).map(([nombre, valor], i) => ({ nombre, valor, color: colores[i % colores.length] }));
+                const conocido = segmentos.reduce((suma, seg) => suma + seg.valor, 0);
+                segmentos.push({ nombre: 'Otros', valor: Math.max(0, d.disco_usado - conocido), color: '#6f8f6f' });
+                segmentos.push({ nombre: 'Libre', valor: d.disco_libre, color: '#1c2420' });
+
+                barra.innerHTML = '';
+                leyenda.innerHTML = '';
+                for (const seg of segmentos) {
+                    const pct = (seg.valor / d.disco_total) * 100;
+                    const div = document.createElement('div');
+                    div.className = 'rl-disk-seg';
+                    div.style.width = pct + '%';
+                    div.style.background = seg.color;
+                    div.title = seg.nombre + ': ' + rlFormatoBytes(seg.valor) + ' (' + pct.toFixed(1) + '%)';
+                    barra.appendChild(div);
+
+                    if (seg.nombre !== 'Libre') {
+                        const item = document.createElement('div');
+                        item.innerHTML = '<span class="rl-disk-punto" style="background:' + seg.color + ';"></span>' +
+                            rlEscapar(seg.nombre) + ': ' + rlFormatoBytes(seg.valor) + ' (' + pct.toFixed(1) + '%)';
+                        leyenda.appendChild(item);
+                    }
+                }
+
+                const pctUsado = (d.disco_usado / d.disco_total) * 100;
+                total.textContent = rlFormatoBytes(d.disco_usado) + ' usados de ' + rlFormatoBytes(d.disco_total) +
+                    ' (' + pctUsado.toFixed(1) + '%) — ' + rlFormatoBytes(d.disco_libre) + ' libres';
+                total.style.color = pctUsado >= 90 ? '#ff8a8a' : '#9fd9a0';
+            } catch (e) {
+                total.textContent = 'Error: ' + e.message;
+                total.style.color = '#ff8a8a';
+            }
+        }
+        rlCargarUsoDisco();
+
+        // ---------- Ajustes del servicio ----------
+        async function rlCargarAjustes() {
+            try {
+                const data = await (await rlFetch('api/estado')).json();
+                const e = data.data;
+                document.getElementById('rl-hero-nombre').textContent = '· ' + e.nombre;
+                document.getElementById('rl-aj-nombre').value = e.nombre;
+                document.getElementById('rl-aj-url').value = e.url_publica;
+                document.getElementById('rl-aj-publico').checked = e.publico;
+                document.getElementById('rl-aj-clave').value = e.clave_app;
+                document.getElementById('rl-ajustes-resumen').textContent = e.publico ? 'Pública' : 'Privada';
+                let fed;
+                if (!e.publico) fed = 'Privada: solo ves y ofreces tus propios juegos.';
+                else if (!e.url_publica) fed = '⚠ Pon la URL pública para que el índice (' + e.indice_url + ') pueda dar de alta tu librería.';
+                else if (e.federada) fed = 'Pública y dada de alta en el índice ' + (e.es_indice ? '(este servicio ES el índice)' : e.indice_url) + '.';
+                else fed = 'Pública, pendiente de alta en el índice ' + e.indice_url + '.';
+                document.getElementById('rl-aj-federacion').textContent = fed;
+            } catch (err) {
+                document.getElementById('rl-ajustes-resumen').textContent = 'Error: ' + err.message;
+            }
+        }
+
+        async function rlGuardarAjustes(extra) {
+            const msg = document.getElementById('rl-aj-msg');
+            msg.textContent = 'Guardando...';
+            msg.style.color = '#9fd9a0';
+            try {
+                const cuerpo = {
+                    nombre: document.getElementById('rl-aj-nombre').value,
+                    url_publica: document.getElementById('rl-aj-url').value,
+                    publico: document.getElementById('rl-aj-publico').checked,
+                    ...extra,
+                };
+                const data = await (await rlFetch('api/ajustes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) })).json();
+                if (!data.success) throw new Error(data.message);
+                msg.textContent = data.aviso ? '⚠ ' + data.aviso : 'Guardado.';
+                msg.style.color = data.aviso ? '#ffd166' : '#7bffb0';
+                rlCargarAjustes();
+                rlCargarJuegos();
+            } catch (err) {
+                msg.textContent = 'Error: ' + err.message;
+                msg.style.color = '#ff8a8a';
+            }
+        }
+
+        document.getElementById('rl-aj-guardar').addEventListener('click', () => rlGuardarAjustes({}));
+        document.getElementById('rl-aj-ver').addEventListener('click', () => {
+            const campo = document.getElementById('rl-aj-clave');
+            campo.type = campo.type === 'password' ? 'text' : 'password';
+        });
+        document.getElementById('rl-aj-copiar').addEventListener('click', () => navigator.clipboard.writeText(document.getElementById('rl-aj-clave').value));
+        document.getElementById('rl-aj-regenerar').addEventListener('click', () => {
+            if (confirm('Las consolas que usan la clave actual dejarán de conectarse hasta que les pongas la nueva. ¿Regenerar?')) {
+                rlGuardarAjustes({ regenerar_clave_app: true });
+            }
+        });
+        rlCargarAjustes();
+        rlCargarCopias();
+
+        document.getElementById('rl-filtro-libreria').addEventListener('change', rlCargarJuegos);
+        document.getElementById('rl-filtro-sistema').addEventListener('change', rlCargarJuegos);
+        document.getElementById('rl-filtro-nombre').addEventListener('input', () => {
+            clearTimeout(window.rlFiltroTimeout);
+            window.rlFiltroTimeout = setTimeout(rlCargarJuegos, 250);
+        });
+
+        rlCargarJuegos();
+    </script>
+
+</body>
+
+</html>

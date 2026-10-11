@@ -1,0 +1,103 @@
+# RomsLibrary: despliegue completo en un solo servidor.
+#
+#   romslibrary        el servicio (API de la app, gestor web, federación, datos)
+#   caddy              proxy inverso con HTTPS automático (Let's Encrypt)
+#   authentik-server   inicio de sesión del gestor web (usuario ADMIN)
+#   authentik-worker   tareas de Authentik (aplica el blueprint de RomsLibrary)
+#   postgresql         base de datos de Authentik
+#
+# Configuración: copia .env.example a .env y rellénalo (ver README.md).
+# Los datos viven en volúmenes con nombre (ver "Copias de seguridad" en el README).
+
+services:
+  romslibrary:
+    build: ../servicio
+    image: romslibrary:local
+    restart: unless-stopped
+    environment:
+      ROMSLIBRARY_NOMBRE: ${ROMSLIBRARY_NOMBRE:-Mi RomsLibrary}
+      ROMSLIBRARY_URL_PUBLICA: ${ROMSLIBRARY_URL_PUBLICA:-https://${ROMSLIBRARY_DOMINIO}}
+      ROMSLIBRARY_PUBLICO: ${ROMSLIBRARY_PUBLICO:-true}
+      ROMSLIBRARY_INDICE_URL: ${ROMSLIBRARY_INDICE_URL:-https://sund.es}
+      ROMSLIBRARY_CLAVE_APP: ${ROMSLIBRARY_CLAVE_APP:-}
+      ROMSLIBRARY_SECRETO_PROXY: ${ROMSLIBRARY_SECRETO_PROXY:?Falta ROMSLIBRARY_SECRETO_PROXY en .env}
+      ROMSLIBRARY_CABECERA_USUARIO: X-Authentik-Username
+    volumes:
+      - romslibrary-datos:/datos
+    # Sin puertos publicados: solo se llega a través de Caddy.
+
+  caddy:
+    image: caddy:2.10.2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ROMSLIBRARY_DOMINIO: ${ROMSLIBRARY_DOMINIO:?Falta ROMSLIBRARY_DOMINIO en .env}
+      AUTENTICACION_DOMINIO: ${AUTENTICACION_DOMINIO:?Falta AUTENTICACION_DOMINIO en .env}
+      ROMSLIBRARY_SECRETO_PROXY: ${ROMSLIBRARY_SECRETO_PROXY}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-datos:/data
+      - caddy-config:/config
+    depends_on:
+      - romslibrary
+      - authentik-server
+
+  postgresql:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: authentik
+      POSTGRES_DB: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_PG_PASS:?Falta AUTHENTIK_PG_PASS en .env}
+    volumes:
+      - authentik-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d authentik -U authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION:-2026.8.3}
+    restart: unless-stopped
+    command: server
+    environment: &authentik-entorno
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?Falta AUTHENTIK_SECRET_KEY en .env}
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_PG_PASS}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      # Valores que usa el blueprint de RomsLibrary (authentik/blueprints):
+      ROMSLIBRARY_URL_PUBLICA: ${ROMSLIBRARY_URL_PUBLICA:-https://${ROMSLIBRARY_DOMINIO}}
+      AUTENTICACION_URL: ${AUTENTICACION_URL:-https://${AUTENTICACION_DOMINIO}}
+      ROMSLIBRARY_ADMIN_USUARIO: ${ROMSLIBRARY_ADMIN_USUARIO:-ADMIN}
+      ROMSLIBRARY_ADMIN_PASSWORD: ${ROMSLIBRARY_ADMIN_PASSWORD:-admin}
+    volumes:
+      - authentik-media:/media
+      - ./authentik/blueprints:/blueprints/romslibrary:ro
+    depends_on:
+      postgresql:
+        condition: service_healthy
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION:-2026.8.3}
+    restart: unless-stopped
+    command: worker
+    environment: *authentik-entorno
+    volumes:
+      - authentik-media:/media
+      - ./authentik/blueprints:/blueprints/romslibrary:ro
+    depends_on:
+      postgresql:
+        condition: service_healthy
+
+volumes:
+  romslibrary-datos:
+  caddy-datos:
+  caddy-config:
+  authentik-postgres:
+  authentik-media:
