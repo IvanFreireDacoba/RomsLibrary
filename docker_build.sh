@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build dockerizado y reproducible del APK de RomLibraryClient.
 # Requiere: ~/android-sdk (SDK ya provisionado) y ~/gradle-dist/gradle-8.7
-# ya presentes en el host, montados de solo lectura en el contenedor.
+# ya presentes en el host (jarjar), montados de solo lectura en el contenedor.
 set -euo pipefail
 cd "$(dirname "$0")"
 
