@@ -10,6 +10,8 @@ APK se descarga de la sección *Releases* de ese repositorio.
 
 - **Servicio** (`servicio/`): guarda los juegos, sirve la app, gestiona las
   consolas y sus partidas, y se federa con otras librerías públicas.
+- **Índice** (`servicio/app/indice.py`): servicio aparte con la lista de
+  librerías públicas. El oficial está en `https://sund.es`; no aloja juegos.
 - **Gestor web** (`https://tu-dominio/gestor/`): subir, editar, borrar y
   descargar juegos; ajustes del servicio. Protegido con Authentik.
 - **App Android** ([RomsLibrary-App](https://github.com/IvanFreireDacoba/RomsLibrary-App)):
@@ -35,16 +37,39 @@ APK se descarga de la sección *Releases* de ese repositorio.
 
 ### Librería pública o privada
 
-- **Pública** (por defecto): compartes tus juegos con las demás librerías
-  públicas y ves los suyos. Tu servicio se da de alta solo en el índice
-  (`https://sund.es`) en cuanto tiene URL pública.
-- **Privada**: solo ves y ofreces tus juegos.
+- **Privada** (por defecto): solo ves y ofreces tus juegos, y la app
+  necesita tu clave de acceso.
+- **Pública**: compartes tus juegos con las demás librerías públicas y ves
+  los suyos; la app entra sin clave. Se activa en el gestor (*Ajustes del
+  servicio*) aceptando antes el aviso legal. Tu servicio se da de alta solo
+  en el índice (`https://sund.es`) en cuanto tiene URL pública.
 
-Se cambia en cualquier momento desde el gestor (*Ajustes del servicio*). Los
+Volver a privada se puede siempre y te saca del índice al momento. La app
+descarga los juegos de otra librería **directamente de ella**: tu servicio
+nunca reenvía juegos ajenos. Los
 juegos de otras librerías **no se pueden editar** desde la tuya: solo
 descargarlos o **copiarlos** a tu librería personal (eligiendo el nombre).
 Si dos librerías tienen el mismo juego (mismo SHA-256), se muestra una sola
 vez.
+
+### Índice de librerías públicas
+
+Un servicio aparte, con su propio contenedor y su base de datos: solo
+guarda el nombre y la URL de cada librería pública y emite los tickets con
+los que una librería lee el catálogo de otra. Las librerías que no
+contactan en 7 días dejan de listarse. Quien administra el índice puede
+retirar una librería (por ejemplo, tras un aviso de un titular de derechos)
+y entonces ya no puede volver a darse de alta sola:
+
+```bash
+docker exec <contenedor-del-índice> python indice.py listar
+docker exec <contenedor-del-índice> python indice.py retirar <id|url> "motivo"
+docker exec <contenedor-del-índice> python indice.py readmitir <id|url>
+```
+
+Para montar un índice propio: la misma imagen con `uvicorn indice:app` y un
+volumen para `/datos`; luego apunta tus librerías a él con
+`ROMSLIBRARY_INDICE_URL`.
 
 ### Consolas y partidas
 
@@ -86,9 +111,10 @@ datos y aplica la configuración de RomsLibrary). Después:
    sesión. Entra con **`ADMIN` / `admin`** (o lo que pusieras en `.env`).
 2. **Cambia la contraseña** en `https://auth.romslibrary.tu-dominio.es`
    (icono de usuario → *Configuración*).
-3. En el gestor, abre **Ajustes del servicio**: comprueba el nombre, la URL
-   pública y si quieres la librería pública o privada. Ahí está también la
-   **clave de acceso** de la app (solo la piden las librerías privadas).
+3. En el gestor, abre **Ajustes del servicio**: comprueba el nombre y la URL
+   pública. La librería empieza **privada**; para hacerla pública, marca la
+   casilla y acepta el aviso legal. Ahí está también la **clave de acceso**
+   de la app (solo la piden las librerías privadas).
 4. Sube tus juegos desde el propio gestor (tus juegos, de tus copias
    originales).
 
@@ -144,7 +170,7 @@ docker compose up -d --build
   URL de otro (el índice comprueba que la URL es tuya antes de darla de alta).
 - Sube solo juegos que tengas derecho a distribuir. Si tu librería es
   pública, los juegos que subas los podrán ver y copiar las demás librerías
-  públicas.
+  públicas y descargar cualquiera con la app.
 
 ## Desarrollo
 
@@ -163,12 +189,18 @@ variables de entorno están documentadas en `servicio/app/config.py`.
 - Una librería **pública** enseña su catálogo a todas las demás librerías
   públicas y a cualquiera que use la app sin clave. No la pongas pública si
   tiene juegos que no puedes distribuir; para tu uso personal, déjala privada.
+- Las librerías nacen privadas; hacer una pública exige aceptar un aviso
+  legal en el gestor.
 - El índice solo guarda la lista de librerías públicas (nombre y dirección):
-  no aloja los juegos de las demás librerías.
+  no aloja, no transmite y no reenvía los juegos de las demás librerías. Las
+  descargas van directas de cada librería a la consola.
 - ES-DE, RetroArch, Retroid, Steam y los demás nombres citados son marcas de
   sus dueños. Este es un proyecto independiente, sin relación con ellos.
-- Si crees que algo publicado con este proyecto vulnera tus derechos, abre un
-  issue en este repositorio.
+- Aviso legal, retirada de contenidos y privacidad de los servicios que
+  funcionan en sund.es (app oficial, librería «SunD» e índice):
+  https://sund.es/romslibrary/aviso-legal.
+- Si crees que algo publicado con este proyecto vulnera tus derechos,
+  escribe a `support@sund.es` o abre un issue en este repositorio.
 
 ## Licencia
 
