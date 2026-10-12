@@ -150,3 +150,13 @@ docker compose up -d --build
 
 `servicio/app/` (FastAPI). `docker build -t romslibrary servicio/`. Las
 variables de entorno están documentadas en `servicio/app/config.py`.
+
+## Licencia
+
+[MIT](LICENSE): puedes usar, copiar, modificar y redistribuir el código como
+quieras, también en proyectos comerciales; solo hay que conservar el aviso de
+copyright y la licencia.
+
+No es obligatorio, pero si lo usas o lo modificas se agradece un enlace a este
+repositorio (https://github.com/IvanFreireDacoba/RomsLibrary-Servicio) para que otros puedan
+encontrar el original.
