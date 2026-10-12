@@ -57,12 +57,16 @@ Las APK firmadas con otra clave no se instalan encima de la oficial.
   tus propias copias de seguridad, homebrew o juegos de licencia libre. En
   muchos países, incluida España, distribuir copias de juegos comerciales sin
   permiso es ilegal aunque sea gratis.
-- La app solo descarga lo que ofrece la librería a la que la conectes; quien
-  gestiona esa librería es responsable de su contenido.
+- La app solo descarga lo que ofrece la librería a la que la conectes, o las
+  otras librerías públicas que esta te enseñe (en ese caso, directamente de
+  ellas). Quien gestiona cada librería es responsable de su contenido.
 - ES-DE, RetroArch, Retroid, Steam y los demás nombres citados son marcas de
   sus dueños. Este es un proyecto independiente, sin relación con ellos.
-- Si crees que algo publicado con este proyecto vulnera tus derechos, abre un
-  issue en este repositorio.
+- Aviso legal, retirada de contenidos y privacidad de los servicios que
+  funcionan en sund.es (app oficial, librería «SunD» e índice):
+  https://sund.es/romslibrary/aviso-legal.
+- Si crees que algo publicado con este proyecto vulnera tus derechos,
+  escribe a `support@sund.es` o abre un issue en este repositorio.
 
 ## Licencia
 
