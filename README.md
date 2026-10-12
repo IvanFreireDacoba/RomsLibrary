@@ -47,3 +47,13 @@ La firma usa `app/debug.keystore`, que **no** está en el repositorio: genera el
 tuyo (`keytool -genkeypair -keystore app/debug.keystore -alias romlibrary-debug
 -storepass romlibrary-debug -keypass romlibrary-debug -keyalg RSA -validity 10000`).
 Las APK firmadas con otra clave no se instalan encima de la oficial.
+
+## Licencia
+
+[MIT](LICENSE): puedes usar, copiar, modificar y redistribuir el código como
+quieras, también en proyectos comerciales; solo hay que conservar el aviso de
+copyright y la licencia.
+
+No es obligatorio, pero si lo usas o lo modificas se agradece un enlace a este
+repositorio (https://github.com/IvanFreireDacoba/RomsLibrary-App) para que otros puedan
+encontrar el original.
