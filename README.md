@@ -48,6 +48,22 @@ tuyo (`keytool -genkeypair -keystore app/debug.keystore -alias romlibrary-debug
 -storepass romlibrary-debug -keypass romlibrary-debug -keyalg RSA -validity 10000`).
 Las APK firmadas con otra clave no se instalan encima de la oficial.
 
+## Aviso legal
+
+- RomsLibrary es software para gestionar **tu propia colección**. No incluye
+  juegos, BIOS ni firmwares, no enlaza a ellos y no dice dónde conseguirlos.
+- Cada persona es responsable de lo que guarda y comparte con él. Usa solo
+  juegos que tengas derecho a usar y, si tu librería es pública, a distribuir:
+  tus propias copias de seguridad, homebrew o juegos de licencia libre. En
+  muchos países, incluida España, distribuir copias de juegos comerciales sin
+  permiso es ilegal aunque sea gratis.
+- La app solo descarga lo que ofrece la librería a la que la conectes; quien
+  gestiona esa librería es responsable de su contenido.
+- ES-DE, RetroArch, Retroid, Steam y los demás nombres citados son marcas de
+  sus dueños. Este es un proyecto independiente, sin relación con ellos.
+- Si crees que algo publicado con este proyecto vulnera tus derechos, abre un
+  issue en este repositorio.
+
 ## Licencia
 
 [MIT](LICENSE): puedes usar, copiar, modificar y redistribuir el código como
