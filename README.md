@@ -151,6 +151,25 @@ docker compose up -d --build
 `servicio/app/` (FastAPI). `docker build -t romslibrary servicio/`. Las
 variables de entorno están documentadas en `servicio/app/config.py`.
 
+## Aviso legal
+
+- RomsLibrary es software para gestionar **tu propia colección**. No incluye
+  juegos, BIOS ni firmwares, no enlaza a ellos y no dice dónde conseguirlos.
+- Cada persona es responsable de lo que guarda y comparte con él. Usa solo
+  juegos que tengas derecho a usar y, si tu librería es pública, a distribuir:
+  tus propias copias de seguridad, homebrew o juegos de licencia libre. En
+  muchos países, incluida España, distribuir copias de juegos comerciales sin
+  permiso es ilegal aunque sea gratis.
+- Una librería **pública** enseña su catálogo a todas las demás librerías
+  públicas y a cualquiera que use la app sin clave. No la pongas pública si
+  tiene juegos que no puedes distribuir; para tu uso personal, déjala privada.
+- El índice solo guarda la lista de librerías públicas (nombre y dirección):
+  no aloja los juegos de las demás librerías.
+- ES-DE, RetroArch, Retroid, Steam y los demás nombres citados son marcas de
+  sus dueños. Este es un proyecto independiente, sin relación con ellos.
+- Si crees que algo publicado con este proyecto vulnera tus derechos, abre un
+  issue en este repositorio.
+
 ## Licencia
 
 [MIT](LICENSE): puedes usar, copiar, modificar y redistribuir el código como
