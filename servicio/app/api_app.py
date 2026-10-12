@@ -16,6 +16,7 @@ cualquier servicio RomsLibrary: solo cambia la URL y la clave de acceso.
 """
 
 import secrets
+import time
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -23,6 +24,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 import ajustes
 import config
+import consolas
 import federacion
 import main as nucleo
 
@@ -42,6 +44,25 @@ def _acceso_permitido(request: Request, accion: str) -> bool:
     if accion in ACCIONES_PUBLICAS or _clave_valida(request):
         return True
     return ajustes.publico()
+
+
+_registros_por_ip: dict[str, list[float]] = {}
+
+
+def _registro_permitido(request: Request) -> bool:
+    """Consolas NUEVAS por IP y día (config.REGISTROS_POR_IP_DIA). La IP la
+    pone el proxy (nginx/Caddy) en X-Real-IP; el servicio no se expone solo."""
+    ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "?")
+    ahora = time.time()
+    marcas = [t for t in _registros_por_ip.get(ip, []) if ahora - t < 86400]
+    if len(marcas) >= config.REGISTROS_POR_IP_DIA:
+        _registros_por_ip[ip] = marcas
+        return False
+    _registros_por_ip[ip] = marcas + [ahora]
+    if len(_registros_por_ip) > 10000:
+        for clave in [k for k, v in _registros_por_ip.items() if all(ahora - t >= 86400 for t in v)]:
+            del _registros_por_ip[clave]
+    return True
 
 
 def _param(origen, nombre: str) -> str:
@@ -120,9 +141,17 @@ async def api_app(request: Request):
                                             clave=_param(q, "clave"), nombre_fichero=_param(q, "nombre_fichero"))
         raise HTTPException(status_code=404, detail="Acción desconocida.")
 
+    # El formulario se recibe entero antes de poder mirar nada: lo que declare
+    # más de lo permitido se rechaza sin leerlo (solo se suben partidas).
+    if int(request.headers.get("content-length") or 0) > config.GUARDADO_MAX_BYTES + 1024 * 1024:
+        return JSONResponse({"success": False, "message": "Partida demasiado grande."}, status_code=413)
     form = await request.form()
     if accion == "consola_registrar":
-        return nucleo.consola_registrar(I, T, android_id=_param(form, "android_id"), nombre=form.get("nombre", ""))
+        android_id = _param(form, "android_id")
+        if not consolas.existe(android_id) and not _registro_permitido(request):
+            return JSONResponse({"success": False, "message": "Demasiadas consolas nuevas desde esta conexión. Prueba mañana."},
+                                status_code=429)
+        return nucleo.consola_registrar(I, T, android_id=android_id, nombre=form.get("nombre", ""))
     if accion == "consola_accion":
         return nucleo.consola_accion(
             _param(q, "op"), I, T, android_id=_param(form, "android_id"),

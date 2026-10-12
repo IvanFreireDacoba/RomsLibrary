@@ -42,9 +42,27 @@
 		redir * /gestor/ 302
 	}
 
+	# API de la app: solo se suben partidas (el servicio limita cada una a
+	# 512 MB por defecto); nada de cuerpos de varios GB.
+	handle /APIs/* {
+		request_body {
+			max_size 600MB
+		}
+		request_header -X-RomsLibrary-Proxy
+		reverse_proxy romslibrary:8765 {
+			header_up X-Real-IP {remote_host}
+			flush_interval -1
+			transport http {
+				read_timeout 2h
+				write_timeout 2h
+			}
+		}
+	}
+
 	handle {
 		request_header -X-RomsLibrary-Proxy
 		reverse_proxy romslibrary:8765 {
+			header_up X-Real-IP {remote_host}
 			flush_interval -1
 			transport http {
 				read_timeout 2h

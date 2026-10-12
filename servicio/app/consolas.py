@@ -121,6 +121,11 @@ def _limpiar_nombre(nombre: str) -> str:
     return nombre
 
 
+def existe(android_id: str) -> bool:
+    with _conectar() as con:
+        return con.execute("SELECT 1 FROM consolas WHERE android_id = ?", ((android_id or "").strip(),)).fetchone() is not None
+
+
 def registrar(android_id: str, nombre: str) -> dict:
     """Primera configuración de la app. Si la consola ya existía (reinstalar
     la app), devuelve sus datos sin cambiar nada. La primera vez, los

@@ -786,8 +786,8 @@ async def finalizar_grupo(
         if nombres_registrados != nombres_en_disco:
             shutil.rmtree(carpeta_juego, ignore_errors=True)
             raise HTTPException(status_code=400, detail="Los ficheros subidos no coinciden con los roles registrados.")
-        # El base se llama igual que el juego ("Pokemon Arceus.nsp") para que
-        # la carpeta pueda llamarse "Pokemon Arceus.nsp/" y ES-DE la muestre
+        # El base se llama igual que el juego ("Mi juego.nsp") para que
+        # la carpeta pueda llamarse "Mi juego.nsp/" y ES-DE la muestre
         # como UN solo juego que lanza el base (updates/DLC quedan dentro,
         # sin verse; se instalan en Eden desde su propio menú).
         base = bases[0]
@@ -911,7 +911,7 @@ def renombrar_juego(
     es_grupo = origen.is_dir()
     ext_grupo = origen.suffix.lower() if es_grupo and origen.suffix.lower() in EXTENSIONES_LANZABLES else ""
     if ext_grupo and not nuevo_nombre.lower().endswith(ext_grupo):
-        nuevo_nombre += origen.suffix  # "MediEvil.cue" -> "MediEvil Remaster" debe seguir siendo ".cue"
+        nuevo_nombre += origen.suffix  # "Juego A.cue" -> "Juego A Remaster" debe seguir siendo ".cue"
         destino = (ROOT / system / nuevo_nombre).resolve()
         if destino.exists():
             raise HTTPException(status_code=409, detail=f"Ya existe un juego llamado «{nuevo_nombre}».")
@@ -1025,16 +1025,38 @@ def _ruta_en(carpeta: Path, sistema: str, clave: str, nombre_fichero: str) -> Pa
     return ruta
 
 
-async def _guardar_subida(ruta: Path, fichero: UploadFile, mtime: float) -> None:
+def _ocupado(carpeta: Path, excepto: Path) -> int:
+    if not carpeta.is_dir():
+        return 0
+    return sum(f.stat().st_size for f in carpeta.rglob("*") if f.is_file() and f != excepto)
+
+
+async def _guardar_subida(ruta: Path, fichero: UploadFile, mtime: float, carpeta_grupo: Path) -> None:
     """Se escribe a un temporal y se renombra al final: si la subida se
     corta, el guardado anterior queda intacto en vez de truncado. Se
     conserva la fecha REAL del dispositivo: es la que decide qué copia es
-    más nueva en cada sincronización."""
+    más nueva en cada sincronización.
+
+    Topes (ver config): tamaño por fichero, cuota del grupo de consolas y
+    espacio libre mínimo en disco. Si se pasa, no se toca el guardado anterior."""
+    if shutil.disk_usage(SAVES_ROOT).free < config.DISCO_LIBRE_MINIMO_BYTES:
+        raise HTTPException(status_code=507, detail="El servidor no tiene espacio para más partidas.")
+    disponible = min(config.GUARDADO_MAX_BYTES, config.GUARDADOS_CUOTA_GRUPO_BYTES - _ocupado(carpeta_grupo, ruta))
     ruta.parent.mkdir(parents=True, exist_ok=True)
     temporal = ruta.with_name(ruta.name + ".subiendo")
-    with open(temporal, "wb") as salida:
-        while trozo := await fichero.read(1024 * 1024):
-            salida.write(trozo)
+    escritos = 0
+    try:
+        with open(temporal, "wb") as salida:
+            while trozo := await fichero.read(1024 * 1024):
+                escritos += len(trozo)
+                if escritos > disponible:
+                    raise HTTPException(status_code=413, detail=(
+                        "Partida demasiado grande." if escritos > config.GUARDADO_MAX_BYTES
+                        else "Se ha llenado el espacio de partidas de estas consolas."))
+                salida.write(trozo)
+    except BaseException:
+        temporal.unlink(missing_ok=True)
+        raise
     os.utime(temporal, (mtime, mtime))
     temporal.replace(ruta)
 
@@ -1149,7 +1171,7 @@ async def guardado_subir_v2(
     exigir_token(request, token)
     carpeta = consolas.carpeta_guardados(_consola(android_id, identificador))
     ruta = _ruta_en(carpeta, sistema, clave, nombre_fichero)
-    await _guardar_subida(ruta, fichero, mtime_dispositivo)
+    await _guardar_subida(ruta, fichero, mtime_dispositivo, carpeta)
     return {"ok": True, "mtime": mtime_dispositivo}
 
 

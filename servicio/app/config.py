@@ -63,6 +63,16 @@ URL_PUBLICA_INICIAL = os.environ.get("ROMSLIBRARY_URL_PUBLICA", "").rstrip("/")
 CLAVE_APP_INICIAL = os.environ.get("ROMSLIBRARY_CLAVE_APP", "")
 PUBLICO_INICIAL = _bool("ROMSLIBRARY_PUBLICO", True)
 
+# Partidas de las consolas: en una librería pública cualquiera puede registrar
+# una consola, así que hay topes (por fichero, por grupo de consolas y espacio
+# libre mínimo en disco). Los guardados más grandes reales (Switch, comprimido
+# entero) rondan los cientos de MB.
+GUARDADO_MAX_BYTES = int(os.environ.get("ROMSLIBRARY_GUARDADO_MAX_MB", "512")) * 1024 * 1024
+GUARDADOS_CUOTA_GRUPO_BYTES = int(os.environ.get("ROMSLIBRARY_GUARDADOS_CUOTA_GB", "4")) * 1024 ** 3
+DISCO_LIBRE_MINIMO_BYTES = int(os.environ.get("ROMSLIBRARY_DISCO_LIBRE_MINIMO_GB", "20")) * 1024 ** 3
+# Consolas NUEVAS por IP y día (las ya registradas no cuentan).
+REGISTROS_POR_IP_DIA = int(os.environ.get("ROMSLIBRARY_REGISTROS_POR_IP_DIA", "5"))
+
 # Uso de disco: categorías extra a mostrar en la barra del gestor, con el
 # formato "Películas=/media/peliculas,Series=/media/series".
 DISCO_EXTRA = [
