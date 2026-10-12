@@ -68,7 +68,7 @@ final class JuegoGridAdapter extends ArrayAdapter<Juego> {
             barraProgreso.setIndeterminate(true);
         }
 
-        ImageLoader.cargarEn(caratula, baseUrl, token, juego.coverUrl);
+        ImageLoader.cargarEn(caratula, juego.base(baseUrl), juego.clave(token), juego.coverUrl);
 
         return celda;
     }

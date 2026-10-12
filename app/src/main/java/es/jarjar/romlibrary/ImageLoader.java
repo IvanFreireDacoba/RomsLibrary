@@ -28,13 +28,15 @@ public final class ImageLoader {
     /** Asocia la petición a la vista mediante una etiqueta para no pintar una carátula
      * equivocada si la fila se recicló antes de que terminase la descarga. */
     public static void cargarEn(ImageView vista, String baseUrl, String token, String coverUrl) {
-        vista.setTag(coverUrl);
+        // La clave es la URL completa: dos librerías pueden tener la misma ruta relativa.
+        String completa = coverUrl == null ? null : baseUrl + coverUrl;
+        vista.setTag(completa);
         vista.setImageDrawable(null);
-        if (coverUrl == null) {
+        if (completa == null) {
             return;
         }
         synchronized (CACHE) {
-            Bitmap enCache = CACHE.get(coverUrl);
+            Bitmap enCache = CACHE.get(completa);
             if (enCache != null) {
                 vista.setImageBitmap(enCache);
                 return;
@@ -42,7 +44,7 @@ public final class ImageLoader {
         }
         new Thread(() -> {
             try {
-                URL url = new URL(baseUrl + coverUrl);
+                URL url = new URL(completa);
                 HttpURLConnection con = (HttpURLConnection) url.openConnection();
                 ApiClient.ponerClave(con, token);
                 con.setConnectTimeout(8000);
@@ -64,10 +66,10 @@ public final class ImageLoader {
                     return;
                 }
                 synchronized (CACHE) {
-                    CACHE.put(coverUrl, bitmap);
+                    CACHE.put(completa, bitmap);
                 }
                 vista.post(() -> {
-                    if (coverUrl.equals(vista.getTag())) {
+                    if (completa.equals(vista.getTag())) {
                         vista.setImageBitmap(bitmap);
                     }
                 });

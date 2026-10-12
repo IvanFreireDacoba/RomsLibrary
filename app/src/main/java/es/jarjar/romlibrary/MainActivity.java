@@ -643,7 +643,7 @@ public class MainActivity extends BaseActivity {
                 // esta comprobación se queda aquí como defensa adicional.
                 temporal = File.createTempFile("caratula_esde", null, getCacheDir());
                 try (FileOutputStream out = new FileOutputStream(temporal)) {
-                    ApiClient.descargarAFichero(baseUrl, token, juego.coverUrl, out);
+                    ApiClient.descargarAFichero(juego.base(baseUrl), juego.clave(token), juego.coverUrl, out);
                 }
                 String extension = extensionRealDeImagen(temporal);
                 // SOLO DEPURACIÓN TEMPORAL -- ver FocusDebugLogger, quitar tras el diagnóstico.
@@ -1155,6 +1155,19 @@ public class MainActivity extends BaseActivity {
                     roles == null ? 0 : roles.optInt("update", 0),
                     roles == null ? 0 : roles.optInt("dlc", 0));
             juego.origen = o.isNull("origen") || !o.has("origen") ? null : o.getString("origen");
+            if (juego.origen != null) {
+                // Juego de otra librería: solo por https y con la carátula en
+                // esa misma librería (se guarda relativa, como las propias).
+                String origenUrl = o.optString("origenUrl", "");
+                if (!origenUrl.startsWith("https://") || origenUrl.contains("@")) {
+                    continue;
+                }
+                juego.origenUrl = origenUrl;
+                if (juego.coverUrl != null) {
+                    juego.coverUrl = juego.coverUrl.startsWith(origenUrl + "/")
+                            ? juego.coverUrl.substring(origenUrl.length()) : null;
+                }
+            }
             juego.libreria = o.optString("libreria", "");
             lista.add(juego);
         }
@@ -1413,8 +1426,8 @@ public class MainActivity extends BaseActivity {
                     }
                     destinoParaLimpiarSiFalla = destino;
                     // "wa" = continuar al final tras un corte, "wt" = empezar de cero (ver descargarConReintentos).
-                    ApiClient.descargarConReintentos(baseUrl, token,
-                            RUTA_API + "?accion=descargar&system=" + juego.sistema + "&filename=" + Uri.encode(juego.nombreFichero) + origenDe(juego),
+                    ApiClient.descargarConReintentos(juego.base(baseUrl), juego.clave(token),
+                            RUTA_API + "?accion=descargar&system=" + juego.sistema + "&filename=" + Uri.encode(juego.nombreFichero),
                             anadir -> getContentResolver().openOutputStream(destino.getUri(), anadir ? "wa" : "wt"),
                             crearCallbackProgreso(juego));
                 }
@@ -1518,14 +1531,9 @@ public class MainActivity extends BaseActivity {
      * de 6,5 GB en el servidor -- la descarga no empezaba nunca. Si CUALQUIER
      * fichero falla, se borra la carpeta entera: nunca queda a medias.
      */
-    /** Juegos de otra librería pública: nuestro servidor los pide a la de origen. */
-    private static String origenDe(Juego juego) {
-        return juego.origen == null ? "" : "&origen=" + Uri.encode(juego.origen);
-    }
-
     private void descargarGrupoPorFicheros(DocumentFile carpetaSistema, Juego juego) throws Exception {
-        String consulta = "&system=" + juego.sistema + "&grupo=" + Uri.encode(juego.nombreFichero) + origenDe(juego);
-        JSONArray ficheros = new JSONArray(ApiClient.getTexto(baseUrl, token,
+        String consulta = "&system=" + juego.sistema + "&grupo=" + Uri.encode(juego.nombreFichero);
+        JSONArray ficheros = new JSONArray(ApiClient.getTexto(juego.base(baseUrl), juego.clave(token),
                 RUTA_API + "?accion=grupo_ficheros" + consulta, 15000));
         long total = 0;
         for (int i = 0; i < ficheros.length(); i++) {
@@ -1566,7 +1574,7 @@ public class MainActivity extends BaseActivity {
                     throw new IllegalStateException("No se pudo crear " + ruta);
                 }
                 final long yaDescargado = acumulado;
-                ApiClient.descargarConReintentos(baseUrl, token,
+                ApiClient.descargarConReintentos(juego.base(baseUrl), juego.clave(token),
                         RUTA_API + "?accion=grupo_fichero" + consulta + "&fichero=" + Uri.encode(ruta),
                         anadir -> getContentResolver().openOutputStream(destino.getUri(), anadir ? "wa" : "wt"),
                         (descargado, totalFichero) -> progresoJuego.onProgreso(yaDescargado + descargado, totalJuego));
@@ -1667,8 +1675,8 @@ public class MainActivity extends BaseActivity {
                 }
                 File zipTemporal = File.createTempFile("juego_rpgmaker", ".zip", getCacheDir());
                 try {
-                    ApiClient.descargarConReintentos(baseUrl, token,
-                            RUTA_API + "?accion=descargar&system=" + juego.sistema + "&filename=" + Uri.encode(juego.nombreFichero) + origenDe(juego),
+                    ApiClient.descargarConReintentos(juego.base(baseUrl), juego.clave(token),
+                            RUTA_API + "?accion=descargar&system=" + juego.sistema + "&filename=" + Uri.encode(juego.nombreFichero),
                             anadir -> new FileOutputStream(zipTemporal, anadir),
                             crearCallbackProgreso(juego));
                     // Con java.io.File normal, a diferencia de SAF/DocumentFile,
