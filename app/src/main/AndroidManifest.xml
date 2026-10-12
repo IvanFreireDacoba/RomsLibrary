@@ -32,11 +32,17 @@
         <package android:name="org.es_de.frontend" />
         <package android:name="org.es_de.frontend.galaxy" />
         <package android:name="net.dinglisch.android.taskerm" />
+        <!-- Las apps con icono en el lanzador: son las que ES-DE lista en
+             androidapps/androidgames/emulators, y EsDeIconos usa su icono. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
     </queries>
 
     <application
         android:allowBackup="true"
-        android:label="RomLibrary"
+        android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@android:style/Theme.Material">

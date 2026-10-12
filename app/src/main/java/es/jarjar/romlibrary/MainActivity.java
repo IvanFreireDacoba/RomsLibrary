@@ -548,20 +548,7 @@ public class MainActivity extends BaseActivity {
      * carpeta de ES-DE en Android es /storage/emulated/0/ES-DE.
      */
     private File carpetaCoversESDE(String sistema) {
-        File raizEsDe = new File(Environment.getExternalStorageDirectory(), "ES-DE");
-        File media = new File(raizEsDe, "downloaded_media");
-        File ajustes = new File(raizEsDe, "settings/es_settings.xml");
-        try {
-            String xml = new String(java.nio.file.Files.readAllBytes(ajustes.toPath()), java.nio.charset.StandardCharsets.UTF_8);
-            java.util.regex.Matcher m = java.util.regex.Pattern
-                    .compile("<string name=\"MediaDirectory\" value=\"([^\"]*)\"").matcher(xml);
-            if (m.find() && !m.group(1).trim().isEmpty()) {
-                media = new File(m.group(1).trim());
-            }
-        } catch (Exception ignored) {
-            // Sin es_settings.xml legible: se queda la ubicación por defecto.
-        }
-        return new File(media, sistema + "/covers");
+        return EsDeIconos.carpetaMedia(sistema, "covers");
     }
 
     /**
@@ -1191,6 +1178,29 @@ public class MainActivity extends BaseActivity {
         actualizarSubtitulo();
         sincronizarGuardadosEnSegundoPlano();
         comprobarSolicitudesPendientes();
+        completarIconosEsDeEnSegundoPlano();
+    }
+
+    private static final AtomicBoolean iconosEsDeEnCurso = new AtomicBoolean(false);
+
+    /** Carátulas de apps, emuladores y Steam que falten en ES-DE (ver EsDeIconos). */
+    private void completarIconosEsDeEnSegundoPlano() {
+        Uri arbol = CarpetaRomsUtil.obtenerUriValido(this, prefs);
+        if (arbol == null || !iconosEsDeEnCurso.compareAndSet(false, true)) {
+            return;
+        }
+        Context contextoApp = getApplicationContext();
+        new Thread(() -> {
+            try {
+                int creadas = EsDeIconos.completar(contextoApp, arbol);
+                if (creadas > 0) {
+                    runOnUiThread(() -> Toast.makeText(this, "ES-DE: " + creadas
+                            + (creadas == 1 ? " carátula nueva" : " carátulas nuevas") + " de apps/Steam", Toast.LENGTH_SHORT).show());
+                }
+            } finally {
+                iconosEsDeEnCurso.set(false);
+            }
+        }, "iconos-esde").start();
     }
 
     private void sincronizarGuardadosEnSegundoPlano() {
