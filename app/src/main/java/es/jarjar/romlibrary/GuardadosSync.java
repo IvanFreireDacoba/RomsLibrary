@@ -307,7 +307,9 @@ final class GuardadosSync {
             }
             String nombre = id.substring(prefijoRemoto.length());
             String[] partes = nombre.split("__", 3);
-            if (partes.length == 3 && ("saves".equals(partes[0]) || "states".equals(partes[0]))) {
+            // El core y el fichero vienen del servidor: nunca rutas (ver NombresSeguros).
+            if (partes.length == 3 && ("saves".equals(partes[0]) || "states".equals(partes[0]))
+                    && NombresSeguros.componente(partes[1]) && NombresSeguros.componente(partes[2])) {
                 lista.add(new Entrada(sistema, stem, nombre,
                         new File(RETROARCH, partes[0] + "/" + partes[1] + "/" + partes[2]), false));
             }

@@ -30,9 +30,10 @@ public final class AppUpdater {
     }
 
     public static void comprobar(Activity activity, String servidor, String clave) {
-        boolean sinServidor = servidor == null || servidor.isEmpty();
-        String baseUrl = sinServidor ? Cuenta.ORIGEN_ACTUALIZACIONES : servidor;
-        String token = sinServidor ? "" : clave;
+        // Siempre del origen oficial, conecte la consola a la librería que
+        // conecte: una librería de terceros nunca decide qué APK se instala.
+        String baseUrl = Cuenta.ORIGEN_ACTUALIZACIONES;
+        String token = "";
         new Thread(() -> {
             try {
                 String json = ApiClient.getTexto(baseUrl, token, "/APIs/RomLibraryApp?accion=version");

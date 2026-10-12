@@ -553,12 +553,12 @@ public class MainActivity extends BaseActivity {
 
     /**
      * Nombre base con el que ES-DE busca la media de un juego. Para un
-     * fichero, sin extensión ("Pokémon Quetzal.gba" -> "Pokémon Quetzal").
+     * fichero, sin extensión ("Mi juego.gba" -> "Mi juego").
      * Para una CARPETA, el nombre completo: los grupos de PS1/PS2 se llaman
-     * "MediEvil.cue"/"Final Fantasy VII.m3u" para que ES-DE los muestre como
+     * "Juego A.cue"/"Juego B.m3u" para que ES-DE los muestre como
      * un solo juego ("directories interpreted as files"), y en ese caso la
      * documentación de ES-DE dice que la media incluye esa "extensión":
-     * covers/MediEvil.cue.jpg. Con covers/MediEvil.jpg no salía nada.
+     * covers/Juego A.cue.jpg. Con covers/Juego A.jpg no salía nada.
      */
     private String nombreMediaESDE(Juego juego) {
         return juego.esGrupo ? juego.nombreFichero : stemSinExtension(juego.nombreFichero);
@@ -566,8 +566,8 @@ public class MainActivity extends BaseActivity {
 
     /**
      * Si ES-DE ya tenía media scrapeada para este juego con el nombre de
-     * antes ("MediEvil.png" en 3dboxes/, miximages/, videos/...), se renombra
-     * al nombre que busca ahora ("MediEvil.cue.png") en TODAS las carpetas de
+     * antes ("Juego A.png" en 3dboxes/, miximages/, videos/...), se renombra
+     * al nombre que busca ahora ("Juego A.cue.png") en TODAS las carpetas de
      * media del sistema, para no perder el scrapeo. No pisa nada existente.
      */
     private void migrarMediaAnteriorESDE(File carpetaSistemaMedia, Juego juego, String nombreMedia) {
@@ -1141,6 +1141,9 @@ public class MainActivity extends BaseActivity {
         for (int i = 0; i < arr.length(); i++) {
             JSONObject o = arr.getJSONObject(i);
             JSONObject roles = o.isNull("roles") ? null : o.optJSONObject("roles");
+            if (!NombresSeguros.componente(o.optString("system")) || !NombresSeguros.componente(o.optString("filename"))) {
+                continue; // nombre que no se puede guardar tal cual (ver NombresSeguros): se ignora
+            }
             Juego juego = new Juego(
                     o.getString("system"),
                     o.getString("filename"),
@@ -1540,6 +1543,9 @@ public class MainActivity extends BaseActivity {
             for (int i = 0; i < ficheros.length(); i++) {
                 JSONObject f = ficheros.getJSONObject(i);
                 String ruta = f.getString("nombre");
+                if (!NombresSeguros.rutaRelativa(ruta) || ruta.isEmpty()) {
+                    throw new IllegalStateException("Nombre de fichero no válido en el grupo: " + ruta);
+                }
                 String rol = f.isNull("rol") ? "" : f.getString("rol");
                 int ultimaBarra = ruta.lastIndexOf('/');
                 String rutaCarpeta = ultimaBarra < 0 ? "" : ruta.substring(0, ultimaBarra);
