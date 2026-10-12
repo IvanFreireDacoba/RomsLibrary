@@ -19,6 +19,7 @@ o copiar a la librería personal.
 
 import json
 import secrets
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -95,7 +96,7 @@ def estado(usuario: str = Usuario):
         "publico": a.get("publico") == "1",
         "clave_app": a.get("clave_app", ""),
         "federada": bool(a.get("fed_id")),
-        "es_indice": config.ES_INDICE,
+        "publica_aceptada": a.get("publica_aceptada", ""),
         "indice_url": config.INDICE_URL,
         "app": nucleo.info_apk(),
     })
@@ -118,6 +119,13 @@ async def guardar_ajustes(request: Request, usuario: str = Usuario):
     if datos.get("regenerar_clave_app"):
         ajustes.guardar("clave_app", secrets.token_urlsafe(24))
     if "publico" in datos:
+        if datos["publico"] and not publico_antes:
+            # Pasar a pública es publicar el catálogo para cualquiera: solo
+            # tras aceptar el aviso legal (el gestor lo enseña). A privada se
+            # puede volver siempre, sin condiciones.
+            if not datos.get("acepto_aviso_publica"):
+                return _error(HTTPException(400, "Para hacer pública la librería hay que aceptar el aviso legal."))
+            ajustes.guardar("publica_aceptada", f"{time.strftime('%Y-%m-%d %H:%M:%S')} por {usuario}")
         ajustes.guardar("publico", "1" if datos["publico"] else "0")
     aviso = None
     try:
@@ -145,8 +153,7 @@ async def juegos(request: Request, usuario: str = Usuario):
     if q.get("accion") == "descargar":
         try:
             if q.get("origen"):
-                return await federacion.descarga_remota(request, q["origen"], "descargar",
-                                                        {"system": q["sistema"], "filename": q["nombre"]})
+                return await federacion.descarga_directa(q["origen"], q["sistema"], q["nombre"])
             return nucleo.descargar_juego(q["sistema"], q["nombre"], I, T)
         except KeyError:
             return _error(HTTPException(400, "Faltan parámetros."))

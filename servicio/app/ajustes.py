@@ -6,7 +6,9 @@ variables de entorno: así se pueden tocar sin reiniciar el contenedor).
 - url_publica: dirección por la que otros (la app, otras librerías) llegan
   a este servicio, p.ej. https://sund.es.
 - publico: "1" = librería PÚBLICA (comparte sus juegos y ve los de otras
-  librerías públicas), "0" = PRIVADA (solo los suyos). Por defecto pública.
+  librerías públicas), "0" = PRIVADA (solo los suyos). Por defecto privada;
+  pasar a pública exige aceptar el aviso legal en el gestor (queda anotado
+  en "publica_aceptada": fecha y usuario).
 - clave_app: clave de acceso que hay que poner en la app para conectarse.
 """
 
@@ -53,4 +55,4 @@ def todos() -> dict:
 
 
 def publico() -> bool:
-    return leer("publico", "1") == "1"
+    return leer("publico", "0") == "1"

@@ -1,16 +1,16 @@
 """
 Federación de librerías públicas de RomsLibrary.
 
-Cada servicio es PÚBLICO (comparte sus juegos y ve los de las demás
-librerías públicas) o PRIVADO (solo los suyos). Un servicio hace de ÍNDICE
-(sund.es): guarda la lista de librerías públicas.
+Cada servicio es PRIVADO (por defecto: solo los suyos) o PÚBLICO (comparte
+sus juegos y ve los de las demás librerías públicas). La lista de librerías
+públicas la lleva el ÍNDICE, un servicio aparte (indice.py; el oficial está
+en sund.es) al que cada librería pública se da de alta como una más.
 
 Alta en el índice (prueba de que controlas la URL que declaras): el servicio
 genera un código de un solo uso, lo guarda como "alta pendiente" y se lo
 manda al índice junto a su URL; el índice pide GET <url>/federacion/ping y
 solo da de alta si esa URL le devuelve el mismo código. Así nadie puede
-registrar la URL de otro. El índice devuelve un id + secreto (solo se
-guarda el hash del secreto).
+registrar la URL de otro. El índice devuelve un id + secreto.
 
 Entre librerías nunca viaja ese secreto: para leer el catálogo o los
 ficheros de otra librería se pide al índice un TICKET (10 min, solo para esa
@@ -23,8 +23,9 @@ ficheros). Si dos librerías tienen el mismo juego se muestra una sola vez,
 con preferencia por el de la librería personal.
 
 Los juegos de otras librerías nunca se pueden editar desde esta: solo
-descargar (este servicio hace de intermediario) o COPIAR a la librería
-personal (se bajan los ficheros y pasan a ser propios).
+descargarlos o COPIARLOS a la librería personal (se bajan los ficheros y
+pasan a ser propios). Las descargas van DIRECTAS de la librería de origen a
+la app (por su API pública): este servicio nunca reenvía juegos ajenos.
 """
 
 import asyncio
@@ -38,7 +39,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import RedirectResponse, Response
 
 import ajustes
 import config
@@ -63,14 +64,6 @@ def inicializar() -> None:
             CREATE TABLE IF NOT EXISTS hashes (
                 ruta TEXT PRIMARY KEY, tamano INTEGER NOT NULL, mtime REAL NOT NULL, sha TEXT NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS indice_servicios (
-                id TEXT PRIMARY KEY, url TEXT NOT NULL UNIQUE, nombre TEXT NOT NULL,
-                secreto_hash TEXT NOT NULL, publico INTEGER NOT NULL DEFAULT 1,
-                alta REAL NOT NULL, ultimo_contacto REAL NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS indice_tickets (
-                ticket TEXT PRIMARY KEY, origen_id TEXT NOT NULL, destino_id TEXT NOT NULL, caduca REAL NOT NULL
-            );
             CREATE TABLE IF NOT EXISTS copias (
                 id INTEGER PRIMARY KEY, origen TEXT NOT NULL, sistema TEXT NOT NULL, fichero TEXT NOT NULL,
                 nuevo_nombre TEXT NOT NULL, estado TEXT NOT NULL, detalle TEXT NOT NULL DEFAULT '',
@@ -79,13 +72,12 @@ def inicializar() -> None:
             );
             """
         )
+        # El índice era antes parte de este servicio (ahora es indice.py, aparte).
+        con.execute("DROP TABLE IF EXISTS indice_servicios")
+        con.execute("DROP TABLE IF EXISTS indice_tickets")
         # Copias que estaban a medias cuando se paró el servicio.
         con.execute("UPDATE copias SET estado = 'error', detalle = 'Interrumpida al reiniciar el servicio' "
                     "WHERE estado IN ('pendiente', 'copiando')")
-
-
-def _hash_secreto(secreto: str) -> str:
-    return hashlib.sha256(secreto.encode()).hexdigest()
 
 
 # =====================================================================
@@ -164,137 +156,6 @@ def arrancar_hilo_hashes() -> None:
 
 
 # =====================================================================
-# Lado ÍNDICE (solo si ROMSLIBRARY_ES_INDICE)
-# =====================================================================
-
-def _exigir_indice() -> None:
-    if not config.ES_INDICE:
-        raise HTTPException(status_code=404, detail="Este servicio no es un índice de librerías.")
-
-
-def _servicio_indice(con: sqlite3.Connection, ident: str, secreto: str) -> sqlite3.Row:
-    fila = con.execute("SELECT * FROM indice_servicios WHERE id = ?", (ident or "",)).fetchone()
-    if fila is None or not secrets.compare_digest(fila["secreto_hash"], _hash_secreto(secreto or "")):
-        raise HTTPException(status_code=403, detail="Librería no reconocida por el índice.")
-    con.execute("UPDATE indice_servicios SET ultimo_contacto = ? WHERE id = ?", (time.time(), fila["id"]))
-    return fila
-
-
-def _alta_en_indice(url: str, nombre: str) -> dict:
-    """Registra (o vuelve a registrar, con secreto nuevo) una URL ya verificada."""
-    secreto = secrets.token_urlsafe(32)
-    ahora = time.time()
-    with _conectar() as con:
-        fila = con.execute("SELECT id FROM indice_servicios WHERE url = ?", (url,)).fetchone()
-        ident = fila["id"] if fila else secrets.token_hex(8)
-        con.execute(
-            "INSERT INTO indice_servicios (id, url, nombre, secreto_hash, publico, alta, ultimo_contacto) "
-            "VALUES (?, ?, ?, ?, 1, ?, ?) ON CONFLICT(url) DO UPDATE SET nombre = excluded.nombre, "
-            "secreto_hash = excluded.secreto_hash, publico = 1, ultimo_contacto = excluded.ultimo_contacto",
-            (ident, url, nombre[:60], _hash_secreto(secreto), ahora, ahora))
-    return {"id": ident, "secreto": secreto}
-
-
-def _url_publica_valida(url: str) -> bool:
-    """El índice hace una petición a la URL que le dan: solo a direcciones
-    PÚBLICAS por https (nunca loopback, red privada, Tailscale/CGNAT,
-    link-local...). Sin esto se le podía hacer pedir URLs internas (SSRF)."""
-    import ipaddress
-    import socket
-    from urllib.parse import urlparse
-    partes = urlparse(url)
-    if partes.scheme != "https" or not partes.hostname or partes.username or partes.password:
-        return False
-    try:
-        direcciones = {info[4][0] for info in socket.getaddrinfo(partes.hostname, partes.port or 443)}
-    except socket.gaierror:
-        return False
-    for d in direcciones:
-        ip = ipaddress.ip_address(d)
-        if not ip.is_global or ip in ipaddress.ip_network("100.64.0.0/10"):
-            return False
-    return True
-
-
-@router.post("/indice/alta")
-async def indice_alta(request: Request):
-    _exigir_indice()
-    datos = await request.json()
-    url = str(datos.get("url", "")).rstrip("/")
-    nombre = str(datos.get("nombre", "")).strip() or url
-    codigo = str(datos.get("codigo", ""))
-    if not url.startswith(("https://", "http://")) or not codigo:
-        raise HTTPException(status_code=400, detail="Falta la URL pública o el código de verificación.")
-    if not config.FEDERACION_URLS_PRIVADAS and not _url_publica_valida(url):
-        raise HTTPException(status_code=400, detail="La URL pública tiene que ser https y resolver a una IP pública.")
-    try:
-        async with httpx.AsyncClient(timeout=10, follow_redirects=False) as cliente:
-            r = await cliente.get(f"{url}/federacion/ping")
-        devuelto = r.json().get("alta_pendiente") if r.status_code == 200 else None
-    except (httpx.HTTPError, ValueError):
-        devuelto = None
-    if not devuelto or not secrets.compare_digest(str(devuelto), codigo):
-        raise HTTPException(status_code=403, detail=f"No se pudo verificar que {url} es tuya "
-                                                    "(¿la URL pública es correcta y accesible desde internet?).")
-    return _alta_en_indice(url, nombre)
-
-
-@router.post("/indice/baja")
-async def indice_baja(request: Request):
-    _exigir_indice()
-    datos = await request.json()
-    with _conectar() as con:
-        fila = _servicio_indice(con, datos.get("id"), datos.get("secreto"))
-        con.execute("UPDATE indice_servicios SET publico = 0 WHERE id = ?", (fila["id"],))
-    return {"ok": True}
-
-
-@router.post("/indice/servicios")
-async def indice_servicios(request: Request):
-    _exigir_indice()
-    datos = await request.json()
-    with _conectar() as con:
-        yo = _servicio_indice(con, datos.get("id"), datos.get("secreto"))
-        if not yo["publico"]:
-            raise HTTPException(status_code=403, detail="Solo las librerías públicas ven a las demás.")
-        filas = con.execute("SELECT id, nombre, url FROM indice_servicios WHERE publico = 1 AND id != ? "
-                            "ORDER BY nombre", (yo["id"],)).fetchall()
-    return [dict(f) for f in filas]
-
-
-@router.post("/indice/ticket")
-async def indice_ticket(request: Request):
-    _exigir_indice()
-    datos = await request.json()
-    with _conectar() as con:
-        yo = _servicio_indice(con, datos.get("id"), datos.get("secreto"))
-        destino = con.execute("SELECT * FROM indice_servicios WHERE id = ? AND publico = 1",
-                              (datos.get("destino", ""),)).fetchone()
-        if not yo["publico"] or destino is None:
-            raise HTTPException(status_code=403, detail="Las dos librerías tienen que ser públicas.")
-        ticket = secrets.token_urlsafe(32)
-        con.execute("DELETE FROM indice_tickets WHERE caduca < ?", (time.time(),))
-        con.execute("INSERT INTO indice_tickets (ticket, origen_id, destino_id, caduca) VALUES (?, ?, ?, ?)",
-                    (ticket, yo["id"], destino["id"], time.time() + DURACION_TICKET))
-    return {"ticket": ticket, "caduca": time.time() + DURACION_TICKET}
-
-
-@router.post("/indice/verificar")
-async def indice_verificar(request: Request):
-    _exigir_indice()
-    datos = await request.json()
-    with _conectar() as con:
-        yo = _servicio_indice(con, datos.get("id"), datos.get("secreto"))
-        fila = con.execute(
-            "SELECT t.*, s.nombre FROM indice_tickets t JOIN indice_servicios s ON s.id = t.origen_id "
-            "WHERE t.ticket = ? AND t.destino_id = ? AND t.caduca > ? AND s.publico = 1",
-            (datos.get("ticket", ""), yo["id"], time.time())).fetchone()
-    if fila is None:
-        return {"valido": False}
-    return {"valido": True, "origen": {"id": fila["origen_id"], "nombre": fila["nombre"]}, "caduca": fila["caduca"]}
-
-
-# =====================================================================
 # Lado CLIENTE: alta/baja de este servicio en el índice
 # =====================================================================
 
@@ -308,9 +169,7 @@ async def ping():
     return {"servicio": "RomsLibrary", "nombre": ajustes.leer("nombre"), "alta_pendiente": codigo}
 
 
-async def _post_indice(ruta: str, datos: dict) -> dict:
-    if config.ES_INDICE:
-        raise RuntimeError("uso interno")  # el índice no se habla a sí mismo por HTTP (ver más abajo)
+async def _post_indice(ruta: str, datos: dict) -> dict | list:
     async with httpx.AsyncClient(timeout=TIMEOUT_REMOTO) as cliente:
         r = await cliente.post(f"{config.INDICE_URL}/federacion/indice/{ruta}", json=datos)
     if r.status_code != 200:
@@ -331,18 +190,6 @@ async def darse_de_alta() -> dict:
     if not url:
         return {"ok": False, "motivo": "Falta la URL pública en los ajustes."}
     nombre = ajustes.leer("nombre")
-    if config.ES_INDICE:
-        # El propio índice se registra directamente en su tabla.
-        with _conectar() as con:
-            fila = con.execute("SELECT id FROM indice_servicios WHERE url = ?", (url,)).fetchone()
-        if fila is None or not ajustes.leer("fed_secreto"):
-            cred = _alta_en_indice(url, nombre)
-            ajustes.guardar("fed_id", cred["id"])
-            ajustes.guardar("fed_secreto", cred["secreto"])
-        else:
-            with _conectar() as con:
-                con.execute("UPDATE indice_servicios SET publico = 1, nombre = ? WHERE id = ?", (nombre, fila["id"]))
-        return {"ok": True}
     if ajustes.leer("fed_id") and ajustes.leer("fed_url") == url:
         try:
             await _post_indice("servicios", {"id": ajustes.leer("fed_id"), "secreto": ajustes.leer("fed_secreto")})
@@ -364,10 +211,6 @@ async def darse_de_alta() -> dict:
 async def darse_de_baja() -> None:
     if not ajustes.leer("fed_id"):
         return
-    if config.ES_INDICE:
-        with _conectar() as con:
-            con.execute("UPDATE indice_servicios SET publico = 0 WHERE id = ?", (ajustes.leer("fed_id"),))
-        return
     try:
         await _post_indice("baja", {"id": ajustes.leer("fed_id"), "secreto": ajustes.leer("fed_secreto")})
     except HTTPException:
@@ -376,18 +219,6 @@ async def darse_de_baja() -> None:
 
 def _cred() -> dict:
     return {"id": ajustes.leer("fed_id"), "secreto": ajustes.leer("fed_secreto")}
-
-
-async def _llamar_indice(ruta: str, datos: dict) -> dict | list:
-    """Igual que _post_indice pero, si este servicio ES el índice, sin HTTP."""
-    if not config.ES_INDICE:
-        return await _post_indice(ruta, datos)
-    funciones = {"servicios": indice_servicios, "ticket": indice_ticket, "verificar": indice_verificar}
-
-    class _Falsa:
-        async def json(self):
-            return datos
-    return await funciones[ruta](_Falsa())
 
 
 # =====================================================================
@@ -405,7 +236,7 @@ async def otras_librerias() -> list[dict]:
     if _cache_servicios.get("caduca", 0) > time.time():
         return _cache_servicios["lista"]
     try:
-        lista = await _llamar_indice("servicios", _cred())
+        lista = await _post_indice("servicios", _cred())
     except Exception as e:  # noqa: BLE001 -- sin índice, se sigue con la librería personal
         print(f"[federacion] índice no disponible: {e}", flush=True)
         lista = _cache_servicios.get("lista", [])
@@ -424,7 +255,7 @@ async def _ticket_para(destino_id: str) -> str:
     guardado = _cache_tickets.get(destino_id)
     if guardado and guardado["caduca"] > time.time() + 60:
         return guardado["ticket"]
-    resp = await _llamar_indice("ticket", {**_cred(), "destino": destino_id})
+    resp = await _post_indice("ticket", {**_cred(), "destino": destino_id})
     _cache_tickets[destino_id] = resp
     return resp["ticket"]
 
@@ -515,7 +346,8 @@ async def juegos_listado(sistema: str | None, texto: str | None, libreria: str) 
                 continue
             if sha:
                 vistos.add(sha)
-            otros.append({**j, "origen": servicio["id"], "libreria": servicio["nombre"], "editable": False})
+            otros.append({**j, "origen": servicio["id"], "origenUrl": servicio["url"],
+                          "libreria": servicio["nombre"], "editable": False})
     return propios + otros
 
 
@@ -525,23 +357,29 @@ async def listar_para_app(sistema: str | None, texto: str | None, libreria: str)
     return await juegos_listado(sistema, texto, libreria)
 
 
-# ---------- Peticiones a otra librería (la app y el gestor pasan por aquí) ----------
+# ---------- Juegos de otra librería: siempre directos desde su origen ----------
 
-async def _url_remota(origen: str) -> tuple[dict, str]:
+RUTA_API_APP = "/APIs/RomLibraryApp"
+
+
+def url_directa(servicio_url: str, params: dict) -> str:
+    """URL de la API PÚBLICA de la otra librería (sin clave: es pública).
+    La app y el navegador del gestor descargan de ahí directamente."""
+    return f"{servicio_url}{RUTA_API_APP}?{httpx.QueryParams(params)}"
+
+
+async def descarga_directa(origen: str, sistema: str, nombre: str) -> RedirectResponse:
+    """Para el gestor: lo manda a la otra librería en vez de reenviar el fichero."""
     servicio = _servicio_por_id(await otras_librerias(), origen)
-    return servicio, await _ticket_para(servicio["id"])
-
-
-async def json_remoto(origen: str, accion: str, params: dict):
-    servicio, ticket = await _url_remota(origen)
-    async with httpx.AsyncClient(timeout=TIMEOUT_REMOTO) as cliente:
-        r = await cliente.get(f"{servicio['url']}/federacion/juego", params={"accion": accion, **params},
-                              headers={"X-RomsLibrary-Ticket": ticket})
-    return JSONResponse(r.json(), status_code=r.status_code)
+    return RedirectResponse(url_directa(servicio["url"], {"accion": "descargar", "system": sistema, "filename": nombre}),
+                            status_code=302)
 
 
 async def caratula_remota(origen: str, sistema: str, nombre: str):
-    servicio, ticket = await _url_remota(origen)
+    """Solo para el gestor (detrás de Authentik): la carátula pasa por aquí
+    con el ticket, para no depender de la otra librería en el navegador."""
+    servicio = _servicio_por_id(await otras_librerias(), origen)
+    ticket = await _ticket_para(servicio["id"])
     async with httpx.AsyncClient(timeout=TIMEOUT_REMOTO) as cliente:
         r = await cliente.get(f"{servicio['url']}/federacion/juego",
                               params={"accion": "caratula", "system": sistema, "filename": nombre},
@@ -550,31 +388,6 @@ async def caratula_remota(origen: str, sistema: str, nombre: str):
         raise HTTPException(status_code=404, detail="Carátula no encontrada.")
     return Response(r.content, media_type=r.headers.get("content-type", "image/png"),
                     headers={"Cache-Control": "private, max-age=3600"})
-
-
-async def descarga_remota(request: Request, origen: str, accion: str, params: dict):
-    """Reenvía en streaming (con Range, para reanudar) un fichero de otra librería."""
-    servicio, ticket = await _url_remota(origen)
-    cabeceras = {"X-RomsLibrary-Ticket": ticket}
-    if request.headers.get("range"):
-        cabeceras["Range"] = request.headers["range"]
-    cliente = httpx.AsyncClient(timeout=httpx.Timeout(15, read=300))
-    respuesta = await cliente.send(cliente.build_request(
-        "GET", f"{servicio['url']}/federacion/juego", params={"accion": accion, **params}, headers=cabeceras),
-        stream=True)
-
-    async def trozos():
-        try:
-            async for trozo in respuesta.aiter_bytes(262144):
-                yield trozo
-        finally:
-            await respuesta.aclose()
-            await cliente.aclose()
-
-    reenviar = {k: v for k, v in respuesta.headers.items()
-                if k.lower() in ("content-length", "content-range", "accept-ranges", "content-disposition")}
-    return StreamingResponse(trozos(), status_code=respuesta.status_code, headers=reenviar,
-                             media_type=respuesta.headers.get("content-type", "application/octet-stream"))
 
 
 # =====================================================================
@@ -593,7 +406,7 @@ async def _exigir_ticket(request: Request) -> dict:
     validado = _tickets_validados.get(ticket)
     if validado and validado["caduca"] > time.time():
         return validado["origen"]
-    resp = await _llamar_indice("verificar", {**_cred(), "ticket": ticket})
+    resp = await _post_indice("verificar", {**_cred(), "ticket": ticket})
     if not resp.get("valido"):
         raise HTTPException(status_code=403, detail="Ticket de federación no válido.")
     _tickets_validados[ticket] = {"origen": resp["origen"], "caduca": resp["caduca"]}

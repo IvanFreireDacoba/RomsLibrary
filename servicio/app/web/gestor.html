@@ -697,7 +697,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 <label for="rl-aj-url">URL pública (por la que llegan la app y otras librerías)</label>
                 <input type="text" id="rl-aj-url" placeholder="https://mi-dominio.es">
                 <label class="rl-check"><input type="checkbox" id="rl-aj-publico"> Librería pública
-                    <span class="rl-ayuda">(comparte tus juegos y ve los de otras librerías públicas)</span></label>
+                    <span class="rl-ayuda">(comparte tus juegos y ve los de otras librerías públicas; por defecto, privada)</span></label>
                 <label>Clave de acceso para la app</label>
                 <div class="rl-clave-fila">
                     <input type="password" id="rl-aj-clave" readonly>
@@ -1565,18 +1565,41 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 document.getElementById('rl-aj-clave').value = e.clave_app;
                 document.getElementById('rl-ajustes-resumen').textContent = e.publico ? 'Pública' : 'Privada';
                 let fed;
+                rlEraPublica = e.publico;
                 if (!e.publico) fed = 'Privada: solo ves y ofreces tus propios juegos.';
                 else if (!e.url_publica) fed = '⚠ Pon la URL pública para que el índice (' + e.indice_url + ') pueda dar de alta tu librería.';
-                else if (e.federada) fed = 'Pública y dada de alta en el índice ' + (e.es_indice ? '(este servicio ES el índice)' : e.indice_url) + '.';
+                else if (e.federada) fed = 'Pública y dada de alta en el índice ' + e.indice_url + '.';
                 else fed = 'Pública, pendiente de alta en el índice ' + e.indice_url + '.';
+                if (e.publico && e.publica_aceptada) fed += ' Aviso legal aceptado el ' + e.publica_aceptada + '.';
                 document.getElementById('rl-aj-federacion').textContent = fed;
             } catch (err) {
                 document.getElementById('rl-ajustes-resumen').textContent = 'Error: ' + err.message;
             }
         }
 
+        let rlEraPublica = false;
+        const RL_AVISO_PUBLICA =
+            'Vas a hacer PÚBLICA esta librería.\n\n' +
+            '· Su catálogo y sus juegos podrá verlos y descargarlos, sin clave, cualquiera que use la app ' +
+            'y todas las demás librerías públicas del índice.\n' +
+            '· Tú eres el responsable de lo que compartes. Comparte solo juegos que tengas derecho a distribuir ' +
+            '(homebrew, juegos libres o con permiso del titular). Distribuir copias de juegos comerciales sin ' +
+            'permiso es ilegal en España y en muchos otros países, aunque sea gratis.\n' +
+            '· Si un titular de derechos te pide retirar algo, retíralo o vuelve a hacer privada la librería. ' +
+            'El índice puede retirar librerías que reciban avisos.\n' +
+            '· Más información: https://sund.es/romslibrary/aviso-legal\n\n' +
+            '¿Aceptas y la haces pública?';
+
         async function rlGuardarAjustes(extra) {
             const msg = document.getElementById('rl-aj-msg');
+            const quierePublica = document.getElementById('rl-aj-publico').checked;
+            if (quierePublica && !rlEraPublica) {
+                if (!confirm(RL_AVISO_PUBLICA)) {
+                    document.getElementById('rl-aj-publico').checked = false;
+                    return;
+                }
+                extra = { ...extra, acepto_aviso_publica: true };
+            }
             msg.textContent = 'Guardando...';
             msg.style.color = '#9fd9a0';
             try {

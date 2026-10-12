@@ -73,16 +73,22 @@ def _param(origen, nombre: str) -> str:
 
 
 def _url_caratula(juego: dict) -> str | None:
-    """Las carátulas se piden siempre a esta misma API (la app nunca habla
-    con /api/* ni con otras librerías directamente). Para juegos de otra
-    librería pública lleva también el origen."""
+    """Carátula de un juego propio: ruta relativa a esta misma API. De otra
+    librería pública: URL completa de SU API pública (como las descargas, la
+    app la pide directamente allí; ver federacion.py)."""
     if not juego.get("coverUrl"):
         return None
-    nombre = juego["coverUrl"].rsplit("/", 1)[-1]
-    url = RUTA + "?" + str(httpx.QueryParams({"accion": "caratula", "system": juego["system"], "filename": nombre}))
-    if juego.get("origen"):
-        url += "&" + str(httpx.QueryParams({"origen": juego["origen"]}))
-    return url
+    params = {"accion": "caratula", "system": juego["system"], "filename": juego["coverUrl"].rsplit("/", 1)[-1]}
+    if juego.get("origenUrl"):
+        return federacion.url_directa(juego["origenUrl"], params)
+    return RUTA + "?" + str(httpx.QueryParams(params))
+
+
+# Las apps anteriores a la 2.23.0 pedían los juegos de otras librerías a
+# esta, que hacía de intermediaria. Ya no: se descargan de su origen.
+def _sin_intermediario() -> JSONResponse:
+    return JSONResponse({"success": False, "message": "Actualiza la app: los juegos de otras librerías "
+                                                      "se descargan directamente de ellas."}, status_code=410)
 
 
 @router.api_route(RUTA, methods=["GET", "POST"])
@@ -96,6 +102,8 @@ async def api_app(request: Request):
     I, T = nucleo.PETICION_INTERNA, nucleo.TOKEN_SISTEMA
 
     if request.method == "GET":
+        if q.get("origen") and accion in ("caratula", "descargar", "grupo_ficheros", "grupo_fichero"):
+            return _sin_intermediario()
         if accion == "sistemas":
             return nucleo.listar_sistemas(I, T)
         if accion == "juegos":
@@ -105,23 +113,12 @@ async def api_app(request: Request):
                 juego["coverUrl"] = _url_caratula(juego)
             return juegos
         if accion == "caratula":
-            if q.get("origen"):
-                return await federacion.caratula_remota(q["origen"], _param(q, "system"), _param(q, "filename"))
             return nucleo.servir_caratula(_param(q, "system"), _param(q, "filename"), I, T)
         if accion == "descargar":
-            if q.get("origen"):
-                return await federacion.descarga_remota(request, q["origen"], "descargar",
-                                                        {"system": _param(q, "system"), "filename": _param(q, "filename")})
             return nucleo.descargar_juego(_param(q, "system"), _param(q, "filename"), I, T)
         if accion == "grupo_ficheros":
-            if q.get("origen"):
-                return await federacion.json_remoto(q["origen"], "grupo_ficheros",
-                                                    {"system": _param(q, "system"), "grupo": _param(q, "grupo")})
             return nucleo.ficheros_de_grupo(I, T, system=_param(q, "system"), grupo=_param(q, "grupo"))
         if accion == "grupo_fichero":
-            if q.get("origen"):
-                return await federacion.descarga_remota(request, q["origen"], "grupo_fichero", {
-                    "system": _param(q, "system"), "grupo": _param(q, "grupo"), "fichero": _param(q, "fichero")})
             return nucleo.fichero_de_grupo(I, T, system=_param(q, "system"), grupo=_param(q, "grupo"),
                                            fichero=_param(q, "fichero"))
         if accion == "version":

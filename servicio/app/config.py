@@ -49,19 +49,17 @@ CABECERA_USUARIO = os.environ.get("ROMSLIBRARY_CABECERA_USUARIO", "X-authentik-u
 # el PHP de Contabo siga en medio. Vacío = desactivada.
 TOKEN_INTERNO = os.environ.get("ROMSLIBRARY_TOKEN_INTERNO", "")
 
-# Federación de librerías públicas. El índice es el servicio que mantiene la
-# lista de librerías públicas (sund.es). ES_INDICE solo en ese servicio.
-ES_INDICE = _bool("ROMSLIBRARY_ES_INDICE", False)
+# Federación de librerías públicas. El índice es un servicio APARTE (indice.py)
+# que mantiene la lista de librerías públicas; el oficial está en sund.es.
 INDICE_URL = os.environ.get("ROMSLIBRARY_INDICE_URL", "https://sund.es").rstrip("/")
-# Solo para pruebas en red local: permite dar de alta en el índice URLs
-# privadas/http. En producción, NUNCA (el índice haría peticiones a la red interna).
-FEDERACION_URLS_PRIVADAS = _bool("ROMSLIBRARY_FEDERACION_URLS_PRIVADAS", False)
 
 # Ajustes iniciales (luego se cambian desde el gestor y viven en la BD).
 NOMBRE_INICIAL = os.environ.get("ROMSLIBRARY_NOMBRE", "Mi RomsLibrary")
 URL_PUBLICA_INICIAL = os.environ.get("ROMSLIBRARY_URL_PUBLICA", "").rstrip("/")
 CLAVE_APP_INICIAL = os.environ.get("ROMSLIBRARY_CLAVE_APP", "")
-PUBLICO_INICIAL = _bool("ROMSLIBRARY_PUBLICO", True)
+# Toda librería nace PRIVADA; hacerla pública es una decisión explícita
+# desde el gestor (con su aviso legal). Esto solo cambia el valor inicial.
+PUBLICO_INICIAL = _bool("ROMSLIBRARY_PUBLICO", False)
 
 # Partidas de las consolas: en una librería pública cualquiera puede registrar
 # una consola, así que hay topes (por fichero, por grupo de consolas y espacio
