@@ -1195,6 +1195,35 @@ public class MainActivity extends BaseActivity {
         sincronizarGuardadosEnSegundoPlano();
         comprobarSolicitudesPendientes();
         completarIconosEsDeEnSegundoPlano();
+        actualizarRomsEnSegundoPlano();
+    }
+
+    private static final long INTERVALO_MIN_ACTUALIZAR_ROMS_MS = 10 * 60 * 1000;
+    private static long ultimaActualizacionRoms = -INTERVALO_MIN_ACTUALIZAR_ROMS_MS;
+    private static final AtomicBoolean actualizandoRoms = new AtomicBoolean(false);
+
+    /** Juegos instalados con una versión superada: pasan a la actual (ver ActualizadorRoms). */
+    private void actualizarRomsEnSegundoPlano() {
+        long ahora = SystemClock.elapsedRealtime();
+        Uri arbol = CarpetaRomsUtil.obtenerUriValido(this, prefs);
+        if (arbol == null || baseUrl == null || ahora - ultimaActualizacionRoms < INTERVALO_MIN_ACTUALIZAR_ROMS_MS
+                || !actualizandoRoms.compareAndSet(false, true)) {
+            return;
+        }
+        ultimaActualizacionRoms = ahora;
+        Context contextoApp = getApplicationContext();
+        String base = baseUrl, clave = token;
+        new Thread(() -> {
+            try {
+                int hechos = ActualizadorRoms.comprobar(contextoApp, Cuenta.cargar(contextoApp), base, clave, arbol,
+                        texto -> runOnUiThread(() -> Toast.makeText(this, texto, Toast.LENGTH_SHORT).show()));
+                if (hechos > 0) {
+                    runOnUiThread(this::cargarJuegos);
+                }
+            } finally {
+                actualizandoRoms.set(false);
+            }
+        }, "actualizar-roms").start();
     }
 
     private static final AtomicBoolean iconosEsDeEnCurso = new AtomicBoolean(false);
