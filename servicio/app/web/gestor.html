@@ -662,6 +662,15 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             margin-top: 6px;
         }
 
+        .rl-edit-versiones {
+            font-size: 12px;
+            color: #9fd9a0;
+            max-height: 120px;
+            overflow-y: auto;
+            margin: 4px 0 6px;
+        }
+        .rl-edit-versiones div { padding: 2px 0; }
+        .rl-edit-versiones code { color: #6f8f6f; }
         .rl-edit-botones {
             display: flex;
             gap: 10px;
@@ -857,6 +866,16 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             <div class="rl-card-cover" id="rl-edit-preview">SIN CARÁTULA</div>
             <div class="rl-drop" id="rl-drop-edit-cover">Arrastra una imagen nueva aquí, o haz clic para elegirla</div>
             <input type="file" id="rl-input-edit-cover" accept="image/png,image/jpeg,image/webp" style="display:none;">
+        </div>
+
+        <label>Versiones</label>
+        <div class="rl-edit-versiones" id="rl-edit-versiones"></div>
+        <input type="file" id="rl-input-update" style="display:none;">
+        <button class="rl-btn rl-btn-secundario" id="rl-edit-update">Añadir update</button>
+        <div class="rl-edit-aviso" id="rl-edit-update-aviso">
+            La versión nueva sustituye a la actual con el mismo nombre (tiene que tener la misma extensión) y solo se
+            acepta si la cabecera del ROM es del mismo juego. Las consolas con cualquier versión anterior se actualizan
+            solas al abrir la app, sin perder las partidas (los save states pueden no valer entre versiones).
         </div>
 
         <div class="rl-msg" id="rl-edit-msg"></div>
@@ -1187,7 +1206,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 xhr.onload = () => {
                     if (xhr.status >= 300 && xhr.status < 400) return rechazar(new Error(RL_SESION_CADUCADA));
                     const data = xhr.response;
-                    if (data && typeof data === 'object') return resolver(data);
+                    if (data && typeof data === 'object') return resolver(Object.assign(data, { _status: xhr.status }));
                     rechazar(new Error('Respuesta inesperada del servidor (HTTP ' + xhr.status + ')'));
                 };
                 xhr.onerror = () => rechazar(new Error('se cortó la conexión con el servidor (o la sesión caducó)'));
@@ -1245,6 +1264,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     const ajeno = !!juego.origen;
                     body.innerHTML = '<span class="rl-card-sys">' + rlEscapar(rlNombresConsola[juego.system] || juego.system) + '</span>' +
                         (ajeno ? '<span class="rl-card-lib" title="Juego de otra librería pública">' + rlEscapar(juego.libreria) + '</span>' : '') +
+                        (juego.version > 1 ? '<span class="rl-card-lib" title="Versión actual (ver Editar)">v' + (+juego.version) + '</span>' : '') +
                         '<div class="rl-card-nombre">' + rlEscapar(juego.filename) + '</div>';
 
                     const acciones = document.createElement('div');
@@ -1396,6 +1416,10 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             const msg = document.getElementById('rl-edit-msg');
             msg.textContent = '';
             document.getElementById('rl-edit-guardar').disabled = false;
+            const sePuedeActualizar = !juego.esGrupo && juego.system !== 'rpgmaker';
+            document.getElementById('rl-edit-update').style.display = sePuedeActualizar ? '' : 'none';
+            document.getElementById('rl-edit-update-aviso').style.display = sePuedeActualizar ? '' : 'none';
+            rlCargarVersiones(juego);
             rlDialogo.showModal();
             document.getElementById('rl-edit-nombre').focus();
         }
@@ -1410,6 +1434,84 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         });
 
         document.getElementById('rl-edit-cancelar').addEventListener('click', () => rlDialogo.close());
+
+        // ---------- Versiones (historial + "Añadir update") ----------
+        async function rlCargarVersiones(juego) {
+            const caja = document.getElementById('rl-edit-versiones');
+            caja.textContent = 'Cargando...';
+            try {
+                const data = await (await rlFetch('api/versiones?' + new URLSearchParams({ sistema: juego.system, nombre: juego.filename }))).json();
+                const h = data.data;
+                caja.innerHTML = '';
+                if (!h) { caja.textContent = 'Calculando su SHA... (vuelve a abrir en unos minutos)'; return; }
+                const cab = document.createElement('div');
+                cab.textContent = 'Cabecera: ' + (h.codigo ? h.codigo + (h.titulo ? ' · ' + h.titulo : '') : 'sin código legible');
+                caja.appendChild(cab);
+                for (const v of h.versiones) {
+                    const fila = document.createElement('div');
+                    fila.textContent = 'v' + v.n + (v === h.versiones[0] ? ' (actual)' : '') + ' · '
+                        + new Date(v.fecha * 1000).toLocaleDateString('es-ES') + ' · ' + rlFormatoGB(v.tamano)
+                        + (v.usuario ? ' · ' + v.usuario : '') + ' · ';
+                    const sha = document.createElement('code');
+                    sha.textContent = v.sha.slice(0, 12);
+                    sha.title = v.sha;
+                    fila.appendChild(sha);
+                    caja.appendChild(fila);
+                }
+            } catch (err) {
+                caja.textContent = 'Error: ' + err.message;
+            }
+        }
+
+        async function rlEnviarUpdate(juego, fichero, sinCabecera) {
+            const msg = document.getElementById('rl-edit-msg');
+            msg.style.color = '#9fd9a0';
+            const form = new FormData();
+            form.append('modo', 'actualizar');
+            form.append('sistema', juego.system);
+            form.append('nombre', juego.filename);
+            form.append('rom', fichero);
+            if (sinCabecera) form.append('sin_cabecera_ok', '1');
+            rlUltimoTamano = fichero.size;
+            const data = await rlSubirConProgreso(form, msg);
+            if (data.success) {
+                msg.style.color = '#7bffb0';
+                msg.textContent = 'Versión v' + data.data.version + ' guardada. Las consolas se actualizarán al abrir la app.';
+                rlCargarVersiones(juego);
+                rlCargarJuegos();
+                return;
+            }
+            if (data._status === 428 && !sinCabecera) {
+                if (confirm(data.message + '\n\n¿Es una versión nueva de «' + juego.filename + '»?')) return rlEnviarUpdate(juego, fichero, true);
+                msg.textContent = 'Cancelado.';
+                return;
+            }
+            msg.style.color = '#ff8a8a';
+            msg.textContent = 'Error: ' + data.message;
+        }
+
+        document.getElementById('rl-edit-update').addEventListener('click', () => {
+            const input = document.getElementById('rl-input-update');
+            input.value = '';
+            input.click();
+        });
+        document.getElementById('rl-input-update').addEventListener('change', async (e) => {
+            const fichero = e.target.files[0];
+            const juego = rlJuegoEditando;
+            if (!fichero || !juego) return;
+            if (!confirm('¿Sustituir «' + juego.filename + '» por «' + fichero.name + '» (' + rlFormatoGB(fichero.size) + ') como versión nueva?')) return;
+            const boton = document.getElementById('rl-edit-update');
+            boton.disabled = true;
+            try {
+                await rlEnviarUpdate(juego, fichero, false);
+            } catch (err) {
+                const msg = document.getElementById('rl-edit-msg');
+                msg.style.color = '#ff8a8a';
+                msg.textContent = 'Error: ' + err.message;
+            } finally {
+                boton.disabled = false;
+            }
+        });
 
         document.getElementById('rl-edit-guardar').addEventListener('click', async () => {
             const juego = rlJuegoEditando;

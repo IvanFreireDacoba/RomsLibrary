@@ -975,6 +975,10 @@ def renombrar_juego(
             pos = f.name.find(sufijo)
             if f.is_file() and pos != -1:
                 f.rename(nueva / (f.name[:pos] + f"__{clave_nueva}." + f.name[pos + len(sufijo):]))
+    # El juego conserva su historial de versiones y, si es un solo fichero,
+    # su SHA (renombrar no cambia el contenido: no hace falta recalcularlo).
+    import versiones
+    versiones.renombrado(system, filename, destino.name, mover_hash=destino.is_file())
 
     return {
         "ok": True,
@@ -1235,8 +1239,10 @@ def uso_disco(request: Request, token: str | None = Query(default=None)):
 import api_app  # noqa: E402
 import federacion  # noqa: E402
 import gestor  # noqa: E402
+import versiones  # noqa: E402
 
 federacion.inicializar()
+versiones.inicializar()
 app.include_router(api_app.router)
 app.include_router(federacion.router)
 app.include_router(gestor.router)

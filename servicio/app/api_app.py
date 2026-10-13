@@ -27,6 +27,7 @@ import config
 import consolas
 import federacion
 import main as nucleo
+import versiones
 
 router = APIRouter()
 
@@ -121,6 +122,10 @@ async def api_app(request: Request):
         if accion == "grupo_fichero":
             return nucleo.fichero_de_grupo(I, T, system=_param(q, "system"), grupo=_param(q, "grupo"),
                                            fichero=_param(q, "fichero"))
+        if accion == "versiones":
+            # Versiones superadas de los juegos de esta librería y la actual de
+            # cada uno: la app actualiza lo que tenga instalado (ver versiones.py).
+            return {"obsoletas": versiones.obsoletas()}
         if accion == "version":
             return await _version()
         if accion == "apk":

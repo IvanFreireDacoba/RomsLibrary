@@ -29,6 +29,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 import ajustes
 import config
 import federacion
+import versiones
 import main as nucleo
 
 router = APIRouter(prefix="/gestor")
@@ -190,6 +191,9 @@ async def subir_o_editar(request: Request, usuario: str = Usuario):
             return _ok()
         if modo == "grupo":
             return await _subir_grupo(form, sistema)
+        if modo == "actualizar":
+            return _ok(await versiones.actualizar(sistema, str(form.get("nombre", "")), _fichero(form, "rom"), usuario,
+                                                  sin_cabecera_ok=str(form.get("sin_cabecera_ok")) == "1"))
         rom = _fichero(form, "rom")
         await nucleo.subir_juego(I, T, system=sistema, filename=str(form.get("nombre", "")).strip(), rom=rom,
                                  cover=_fichero(form, "cover", obligatorio=False))
@@ -218,6 +222,12 @@ async def _subir_grupo(form, sistema: str):
         nucleo.borrar_grupo_incompleto(sistema, nombre_juego, I, T)
         raise
     return _ok()
+
+
+@router.get("/api/versiones")
+def historial_versiones(request: Request, usuario: str = Usuario):
+    q = request.query_params
+    return _ok(versiones.historial(q.get("sistema", ""), q.get("nombre", "")))
 
 
 @router.delete("/api/juegos")

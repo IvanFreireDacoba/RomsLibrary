@@ -43,6 +43,7 @@ from fastapi.responses import RedirectResponse, Response
 
 import ajustes
 import config
+import versiones
 
 router = APIRouter(prefix="/federacion")
 
@@ -128,20 +129,22 @@ def _calcular_hashes_pendientes() -> None:
                 continue
             clave = f"{carpeta_sistema.name}/{juego.name}"
             vistos.add(clave)
-            if sha_conocido(carpeta_sistema.name, juego.name):
-                continue
+            sha = sha_conocido(carpeta_sistema.name, juego.name)
             try:
                 tamano, mtime = _firma(juego)
-                sha = _sha_juego(juego)
-                with _conectar() as con:
-                    con.execute("INSERT OR REPLACE INTO hashes (ruta, tamano, mtime, sha) VALUES (?, ?, ?, ?)",
-                                (clave, tamano, mtime, sha))
+                if not sha:
+                    sha = _sha_juego(juego)
+                    with _conectar() as con:
+                        con.execute("INSERT OR REPLACE INTO hashes (ruta, tamano, mtime, sha) VALUES (?, ?, ?, ?)",
+                                    (clave, tamano, mtime, sha))
+                versiones.registrar(carpeta_sistema.name, juego.name, sha, tamano)
             except OSError:
                 continue  # se está subiendo o borrando justo ahora; en la próxima vuelta
     with _conectar() as con:
         for fila in con.execute("SELECT ruta FROM hashes").fetchall():
             if fila["ruta"] not in vistos:
                 con.execute("DELETE FROM hashes WHERE ruta = ?", (fila["ruta"],))
+                versiones.olvidar_ruta(fila["ruta"])
 
 
 def arrancar_hilo_hashes() -> None:
@@ -320,6 +323,7 @@ def juegos_propios(sistema: str | None = None, texto: str | None = None) -> list
     juegos = nucleo.listar_juegos_galeria(nucleo.PETICION_INTERNA, nucleo.TOKEN_SISTEMA, system=sistema, q=texto)
     for j in juegos:
         j["sha"] = sha_conocido(j["system"], j["filename"])
+        j["version"] = versiones.numero_actual(j["system"], j["filename"])
         j["origen"] = None
         j["libreria"] = ajustes.leer("nombre")
         j["editable"] = True
