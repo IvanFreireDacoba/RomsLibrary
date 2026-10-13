@@ -26,6 +26,18 @@ Una vez instalada se actualiza sola.
    Si pulsas *Más tarde* puedes descargar juegos igual, pero la consola no se
    registra y **no se sincronizan partidas**.
 
+### Juegos que se actualizan solos
+
+Si la librería sube una versión nueva de un juego que tienes instalado (la
+reconoce por su SHA-256, no por el nombre), la app la descarga al abrirse y
+la pone en lugar de la vieja **con el mismo nombre**, después de subir tus
+partidas: los emuladores siguen encontrándolas. Los *save states* pueden no
+valer entre versiones. Solo se calcula el SHA de los ficheros cuyo tamaño
+coincide con el de alguna versión vieja, así que no recorre toda la consola.
+
+Los juegos que su autor publica en su web (traducciones...) se descargan de
+su enlace, con el SHA comprobado; si el enlace falla, de la librería.
+
 ### Partidas
 
 Con la consola registrada, las partidas y los *save states* se guardan en la
