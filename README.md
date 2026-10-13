@@ -71,6 +71,72 @@ Para montar un índice propio: la misma imagen con `uvicorn indice:app` y un
 volumen para `/datos`; luego apunta tus librerías a él con
 `ROMSLIBRARY_INDICE_URL`.
 
+### Versiones de los juegos
+
+La identidad de un juego no es su nombre (lo pone quien sube) sino su
+**cadena de SHA-256**: v1 → v2 → v3. Cada juego tiene un id fijo y su
+historial (`versiones.py`); los que ya estaban entraron solos como v1.
+
+- **Añadir update** (gestor → *Editar*): el ROM nuevo sustituye al actual
+  **con el mismo nombre de fichero** y su SHA se añade al historial. Solo se
+  acepta si el código de la **cabecera** del ROM (`cabeceras.py`: GB/GBC,
+  GBA, N64, GameCube, PS1, PS2, PSP, también dentro de .zip) coincide con el
+  del juego: un Mario nunca entra como versión de Esmeralda. Si el juego tiene
+  cabecera, la nueva también tiene que tenerla (no se puede saltar); los
+  formatos sin cabecera legible (.chd, .cso, .rvz) piden confirmación.
+  Tampoco se aceptan: el SHA de otro juego, la versión actual ni una anterior
+  (nunca se vuelve atrás) ni otra extensión. Solo juegos de un fichero.
+- **La app** (`ActualizadorRoms`, al abrirse, cada 10 min como mucho) pide
+  `accion=versiones` (versiones superadas con su tamaño y la actual de cada
+  juego), calcula el SHA solo de los ficheros de la consola con un tamaño que
+  coincida (con caché), sube las partidas, baja la versión actual a un
+  temporal, comprueba su SHA y la pone **con el nombre que tenía en la
+  consola**: los emuladores siguen encontrando las partidas (los *save
+  states* pueden no valer entre versiones). La v1 y la v2 de dos consolas
+  pasan las dos a la actual.
+
+Límite conocido: los romhacks conservan el código del juego base (todos los
+hacks de Rojo Fuego son `gba:BPRE`), así que la cabecera no distingue un
+hack de otro sobre la misma base.
+
+### Confianza y linaje entre librerías
+
+- El **índice** guarda una **confianza** (0-100) por librería que pone SOLO
+  su administrador: `python indice.py confianza <id|url> <0-99>` en el contenedor del índice.
+  La librería de **referencia** (`ROMSLIBRARY_INDICE_REFERENCIA`, sund.es)
+  vale siempre 100. Cada 6 h el índice lee los catálogos y calcula una
+  **sugerencia** (`indice.py reputacion [ahora]`) comparando con la
+  referencia: juegos con su mismo SHA actual o más al día (su cadena la
+  continúa) suman, los anticuados no, cada contradicción de historial resta
+  25; solo pesa del todo con 20 juegos en común y tiene tope 95. Nunca se
+  aplica sola.
+- **Linaje** (`linaje.py`): las cadenas se juntan por prioridad: la propia,
+  la referencia y las de confianza ≥ 70 (de más a menos). Una cadena que
+  extiende la aceptada la sustituye (una librería de confianza puede llevar un
+  juego más al día que la referencia); una que contradice se descarta. Nunca
+  se ordena por fechas: subir hoy una versión vieja no la hace nueva.
+- Efectos: de otras librerías no se muestran versiones superadas; en tus
+  juegos el gestor avisa de «hay versión nueva» si una librería de confianza
+  la tiene; la app actualiza también desde ellas (descargando directamente).
+
+### Fuentes externas (web del autor)
+
+Para juegos que su autor publica en su web (traducciones...). En *Editar →
+Fuente externa* (o *Añadir desde un enlace del autor* al subir) se guarda el
+enlace de descarga directa y la página del autor (`externos.py`):
+
+- Al guardarlo, el servidor lo descarga una vez: si es la versión actual se
+  guarda; si es una versión nueva del mismo juego (cabecera) entra como
+  update; si no, se rechaza. Se guarda copia aquí solo como respaldo.
+- La app descarga **de ese enlace** (cuenta para las estadísticas del autor),
+  comprueba el SHA y, si no responde o no coincide, baja la copia de la
+  librería. También las actualizaciones.
+- Cada 12 h se mira (sin descargar) si el fichero del enlace ha cambiado
+  (ETag, fecha, tamaño): el gestor avisa («enlace cambiado») y se importa
+  volviendo a guardar el enlace. Nunca se importa solo.
+- Solo enlaces https a direcciones públicas, comprobando cada redirección
+  (`redsegura.py`), y tienen que ser el fichero, no una página.
+
 ### Consolas y partidas
 
 Al configurar la app, cada consola recibe un **identificador** público
