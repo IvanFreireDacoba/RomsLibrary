@@ -17,6 +17,11 @@ final class Juego {
     String origen;
     String origenUrl;
     String libreria;
+    String sha;            // SHA-256 de la versión que ofrece la librería (null si aún no lo ha calculado)
+    // Juego que su autor publica en su web (traducciones...): se descarga de
+    // ahí (cuenta para sus estadísticas) y, si falla o no coincide el SHA, de la librería.
+    String fuenteExterna;
+    int confianza;         // de la librería de origen, según el índice (70+ = de confianza)
     boolean instaladoLocal;
     boolean descargando; // estado de UI puro (no viene del servidor): sustituye el botón por una barra de progreso.
     boolean enCola; // esperando su turno en la cola de descargas (ver MainActivity.solicitarDescarga).

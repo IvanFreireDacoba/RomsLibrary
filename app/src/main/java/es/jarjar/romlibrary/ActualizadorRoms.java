@@ -45,6 +45,8 @@ final class ActualizadorRoms {
     /** Una versión superada de un juego de la librería. */
     private static final class Obsoleta {
         String sistema, sha, filenameActual, shaActual;
+        String origenUrl;       // la versión actual está en otra librería (de confianza): se baja de allí
+        String fuenteExterna;   // o en la web de su autor (se prueba primero)
         long tamano;
         int n, nActual;
     }
@@ -104,6 +106,10 @@ final class ActualizadorRoms {
             o.filenameActual = a.getString("filename");
             o.shaActual = a.getString("sha").toLowerCase();
             o.nActual = a.getInt("n");
+            String origen = a.isNull("origenUrl") ? "" : a.optString("origenUrl", "");
+            o.origenUrl = origen.startsWith("https://") && !origen.contains("@") ? origen : null;
+            String externa = a.isNull("fuenteExterna") ? "" : a.optString("fuenteExterna", "");
+            o.fuenteExterna = externa.startsWith("https://") && !externa.contains("@") ? externa : null;
             // Nombres que acaban en disco: los mismos filtros que al instalar.
             if (NombresSeguros.componente(o.sistema) && NombresSeguros.componente(o.filenameActual)) {
                 lista.add(o);
@@ -162,12 +168,28 @@ final class ActualizadorRoms {
                 throw new IllegalStateException("no se pudo crear el temporal");
             }
             final Uri uriTemporal = temporal.getUri();
-            ApiClient.descargarConReintentos(baseUrl, token,
-                    Cuenta.RUTA_API + "?accion=descargar&system=" + Uri.encode(t.o.sistema)
-                            + "&filename=" + Uri.encode(t.o.filenameActual),
-                    anadir -> ctx.getContentResolver().openOutputStream(uriTemporal, anadir ? "wa" : "wt"),
-                    (hecho, total) -> { });
-            String sha = sha(ctx, uriTemporal);
+            String sha = "";
+            if (t.o.fuenteExterna != null) {
+                // Primero la web del autor; si falla o no coincide, la librería.
+                try {
+                    ApiClient.descargarConReintentos("", null, t.o.fuenteExterna,
+                            anadir -> ctx.getContentResolver().openOutputStream(uriTemporal, anadir ? "wa" : "wt"),
+                            (hecho, total) -> { });
+                    sha = sha(ctx, uriTemporal);
+                } catch (Exception e) {
+                    GuardadosSync.log("enlace del autor no disponible: " + e);
+                }
+            }
+            if (!t.o.shaActual.equals(sha)) {
+                // De otra librería: directo de ella y sin nuestra clave.
+                boolean otra = t.o.origenUrl != null;
+                ApiClient.descargarConReintentos(otra ? t.o.origenUrl : baseUrl, otra ? null : token,
+                        Cuenta.RUTA_API + "?accion=descargar&system=" + Uri.encode(t.o.sistema)
+                                + "&filename=" + Uri.encode(t.o.filenameActual),
+                        anadir -> ctx.getContentResolver().openOutputStream(uriTemporal, anadir ? "wa" : "wt"),
+                        (hecho, total) -> { });
+                sha = sha(ctx, uriTemporal);
+            }
             if (!t.o.shaActual.equals(sha)) {
                 throw new IllegalStateException("la descarga no coincide con la versión publicada");
             }
@@ -223,7 +245,7 @@ final class ActualizadorRoms {
                 .putString(f.getUri().toString(), f.length() + "|" + f.lastModified() + "|" + sha).apply();
     }
 
-    private static String sha(Context ctx, Uri uri) throws Exception {
+    static String sha(Context ctx, Uri uri) throws Exception {
         MessageDigest md = MessageDigest.getInstance("SHA-256");
         try (InputStream in = ctx.getContentResolver().openInputStream(uri)) {
             if (in == null) {

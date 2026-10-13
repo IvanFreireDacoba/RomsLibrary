@@ -50,7 +50,8 @@ final class JuegoAdapter extends ArrayAdapter<Juego> {
         String etiquetaRoles = juego.etiquetaRolesSwitch();
         detalle.setText((juego.instaladoLocal ? "✓ EN EL DISPOSITIVO · " : "") + tamano
                 + (etiquetaRoles.isEmpty() ? "" : " · " + etiquetaRoles)
-                + (juego.origen != null ? " · de " + juego.libreria : ""));
+                + (juego.origen != null ? " · de " + juego.libreria + (juego.confianza >= 70 ? " ✔" : "") : "")
+                + (juego.fuenteExterna != null ? " · enlace del autor" : ""));
 
         botonInstalar.setText(juego.instaladoLocal ? "Desinstalar" : "Instalar");
         botonInstalar.setOnClickListener(v -> listener.onAccionInstalar(juego));

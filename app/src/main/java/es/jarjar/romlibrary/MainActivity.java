@@ -1169,6 +1169,11 @@ public class MainActivity extends BaseActivity {
                 }
             }
             juego.libreria = o.optString("libreria", "");
+            String sha = o.optString("sha", "");
+            juego.sha = sha.matches("[0-9a-f]{64}") ? sha : null;
+            String externa = o.isNull("fuenteExterna") ? "" : o.optString("fuenteExterna", "");
+            juego.fuenteExterna = externa.startsWith("https://") && !externa.contains("@") && juego.sha != null ? externa : null;
+            juego.confianza = o.optInt("confianza", 0);
             lista.add(juego);
         }
         return lista;
@@ -1455,10 +1460,12 @@ public class MainActivity extends BaseActivity {
                     }
                     destinoParaLimpiarSiFalla = destino;
                     // "wa" = continuar al final tras un corte, "wt" = empezar de cero (ver descargarConReintentos).
-                    ApiClient.descargarConReintentos(juego.base(baseUrl), juego.clave(token),
-                            RUTA_API + "?accion=descargar&system=" + juego.sistema + "&filename=" + Uri.encode(juego.nombreFichero),
-                            anadir -> getContentResolver().openOutputStream(destino.getUri(), anadir ? "wa" : "wt"),
-                            crearCallbackProgreso(juego));
+                    if (!descargarDeFuenteExterna(juego, destino)) {
+                        ApiClient.descargarConReintentos(juego.base(baseUrl), juego.clave(token),
+                                RUTA_API + "?accion=descargar&system=" + juego.sistema + "&filename=" + Uri.encode(juego.nombreFichero),
+                                anadir -> getContentResolver().openOutputStream(destino.getUri(), anadir ? "wa" : "wt"),
+                                crearCallbackProgreso(juego));
+                    }
                 }
                 juego.instaladoLocal = true;
                 if ("rpgmaker".equals(juego.sistema)) {
@@ -1560,6 +1567,29 @@ public class MainActivity extends BaseActivity {
      * de 6,5 GB en el servidor -- la descarga no empezaba nunca. Si CUALQUIER
      * fichero falla, se borra la carpeta entera: nunca queda a medias.
      */
+    /**
+     * Juego con enlace del autor: se intenta primero desde su web. Solo vale si
+     * lo descargado tiene el SHA que anuncia la librería; si no (o si el
+     * enlace no responde) devuelve false y se descarga de la librería.
+     */
+    private boolean descargarDeFuenteExterna(Juego juego, DocumentFile destino) {
+        if (juego.fuenteExterna == null || juego.sha == null) {
+            return false;
+        }
+        try {
+            ApiClient.descargarConReintentos("", null, juego.fuenteExterna,
+                    anadir -> getContentResolver().openOutputStream(destino.getUri(), anadir ? "wa" : "wt"),
+                    crearCallbackProgreso(juego));
+            if (juego.sha.equals(ActualizadorRoms.sha(this, destino.getUri()))) {
+                return true;
+            }
+            GuardadosSync.log("enlace del autor de " + juego.nombreFichero + ": el SHA no coincide, se baja de la librería");
+        } catch (Exception e) {
+            GuardadosSync.log("enlace del autor de " + juego.nombreFichero + " no disponible (" + e + "), se baja de la librería");
+        }
+        return false;
+    }
+
     private void descargarGrupoPorFicheros(DocumentFile carpetaSistema, Juego juego) throws Exception {
         String consulta = "&system=" + juego.sistema + "&grupo=" + Uri.encode(juego.nombreFichero);
         JSONArray ficheros = new JSONArray(ApiClient.getTexto(juego.base(baseUrl), juego.clave(token),
