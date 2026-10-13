@@ -115,11 +115,13 @@ ROLES_SWITCH_VALIDOS = {"base", "update", "dlc"}
 @asynccontextmanager
 async def _ciclo_vida(_app):
     """Al arrancar: hashes de los juegos en segundo plano (para no mostrar
-    duplicados entre librerías) y alta periódica en el índice si la
-    librería es pública."""
+    duplicados entre librerías), alta periódica en el índice si la
+    librería es pública y comprobación de las fuentes externas."""
     import asyncio
+    import externos
     import federacion
     federacion.arrancar_hilo_hashes()
+    tarea_externos = asyncio.create_task(externos.bucle())
 
     async def alta_periodica():
         await asyncio.sleep(15)
@@ -135,6 +137,7 @@ async def _ciclo_vida(_app):
     tarea = asyncio.create_task(alta_periodica())
     yield
     tarea.cancel()
+    tarea_externos.cancel()
 
 
 # Sin /docs ni /openapi.json: el servicio está expuesto a internet y no
@@ -1239,10 +1242,12 @@ def uso_disco(request: Request, token: str | None = Query(default=None)):
 import api_app  # noqa: E402
 import federacion  # noqa: E402
 import gestor  # noqa: E402
+import externos  # noqa: E402
 import versiones  # noqa: E402
 
 federacion.inicializar()
 versiones.inicializar()
+externos.inicializar()
 app.include_router(api_app.router)
 app.include_router(federacion.router)
 app.include_router(gestor.router)

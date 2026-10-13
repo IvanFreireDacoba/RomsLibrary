@@ -43,6 +43,8 @@ from fastapi.responses import RedirectResponse, Response
 
 import ajustes
 import config
+import externos
+import linaje
 import versiones
 
 router = APIRouter(prefix="/federacion")
@@ -296,8 +298,39 @@ def _juego_remoto_valido(j) -> dict | None:
     if roles:
         roles = {k: int(v) for k, v in roles.items() if k in ("base", "update", "dlc") and isinstance(v, int)}
     tipo = j.get("tipoGrupo") if j.get("tipoGrupo") in (None, "switch_base_dlc") else None
+    # Historial de versiones (para el linaje, ver linaje.py): [sha, tamaño] de la más vieja a la anterior a la actual.
+    anteriores = []
+    if sha and isinstance(j.get("anteriores"), list):
+        for par in j["anteriores"][:100]:
+            if (isinstance(par, list) and len(par) == 2 and isinstance(par[0], str) and len(par[0]) == 64
+                    and set(par[0]) <= _SHA_VALIDO and isinstance(par[1], int) and par[1] >= 0 and par[0] != sha):
+                anteriores.append([par[0], par[1]])
+    codigo = j.get("codigo") if isinstance(j.get("codigo"), str) and len(j["codigo"]) <= 40 \
+        and all(c.isalnum() or c in ":-_. " for c in j["codigo"]) else None
     return {"system": sistema, "filename": nombre, "sizeBytes": tamano, "coverUrl": portada,
-            "esGrupo": bool(j.get("esGrupo")), "tipoGrupo": tipo, "roles": roles, "sha": sha}
+            "esGrupo": bool(j.get("esGrupo")), "tipoGrupo": tipo, "roles": roles, "sha": sha,
+            "version": len(anteriores) + 1 if sha else None, "anteriores": anteriores, "codigo": codigo,
+            "fuenteExterna": _enlace_remoto(j.get("fuenteExterna")) if sha else None,
+            "paginaAutor": _enlace_remoto(j.get("paginaAutor"))}
+
+
+def _enlace_remoto(url) -> str | None:
+    """Enlaces que publica otra librería: solo https, sin credenciales ni IPs
+    privadas escritas a mano (la app además comprueba el SHA de lo que baja)."""
+    import ipaddress
+    from urllib.parse import urlparse
+    if not isinstance(url, str) or len(url) > 500 or any(c in url for c in "<>\"\x00 "):
+        return None
+    p = urlparse(url)
+    if p.scheme != "https" or not p.hostname or p.username or p.password:
+        return None
+    try:
+        if not ipaddress.ip_address(p.hostname).is_global:
+            return None
+    except ValueError:
+        if p.hostname == "localhost" or p.hostname.endswith((".local", ".internal", ".lan", ".ts.net")):
+            return None
+    return url
 
 
 async def catalogo_de(servicio: dict) -> list[dict]:
@@ -321,24 +354,57 @@ async def catalogo_de(servicio: dict) -> list[dict]:
 def juegos_propios(sistema: str | None = None, texto: str | None = None) -> list[dict]:
     import main as nucleo
     juegos = nucleo.listar_juegos_galeria(nucleo.PETICION_INTERNA, nucleo.TOKEN_SISTEMA, system=sistema, q=texto)
+    cadenas = versiones.cadenas_propias()
+    enlaces = externos.por_ruta()
     for j in juegos:
         j["sha"] = sha_conocido(j["system"], j["filename"])
-        j["version"] = versiones.numero_actual(j["system"], j["filename"])
+        c = cadenas.get(f"{j['system']}/{j['filename']}")
+        cadena = c["cadena"] if c and c["cadena"][-1][0] == j["sha"] else []
+        j["version"] = len(cadena) or None
+        j["anteriores"] = [[s, t] for s, t in cadena[:-1]]
+        j["codigo"] = c["codigo"] if c else None
+        e = enlaces.get(f"{j['system']}/{j['filename']}")
+        # Descarga preferente desde la web del autor (ver externos.py).
+        j["fuenteExterna"] = e["url"] if e else None
+        j["paginaAutor"] = (e["pagina"] or None) if e else None
+        j["fuenteEstado"] = e["estado"] if e else None   # solo para el gestor (no se exporta)
         j["origen"] = None
         j["libreria"] = ajustes.leer("nombre")
         j["editable"] = True
     return juegos
 
 
-async def juegos_listado(sistema: str | None, texto: str | None, libreria: str) -> list[dict]:
-    """libreria: "personal" | "otras" | "todas". Sin duplicados por SHA."""
-    propios = juegos_propios(sistema, texto) if libreria in ("personal", "todas") else []
-    if libreria == "personal":
-        return propios
-    vistos = {j["sha"] for j in juegos_propios() if j["sha"]}  # nunca repetir uno que ya tengo
-    otros = []
+async def red() -> tuple[list[dict], list[dict], list[list[dict]], linaje.Linaje]:
+    """Juegos propios, librerías públicas, sus catálogos y el linaje de
+    versiones que sale de todo ello (ver linaje.py)."""
+    propios = juegos_propios()
     servicios = await otras_librerias()
     catalogos = await asyncio.gather(*(catalogo_de(s) for s in servicios))
+    lin = linaje.Linaje()
+    for j in propios:
+        if j["sha"]:
+            lin.anadir([s for s, _ in j["anteriores"]] + [j["sha"]], "propia")
+    fiables = sorted((x for x in zip(servicios, catalogos) if x[0].get("confianza", 0) >= linaje.UMBRAL),
+                     key=lambda x: -x[0].get("confianza", 0))
+    for servicio, catalogo in fiables:
+        for j in catalogo:
+            if j.get("sha"):
+                lin.anadir([s for s, _ in j["anteriores"]] + [j["sha"]], servicio["id"])
+    return propios, servicios, catalogos, lin
+
+
+async def juegos_listado(sistema: str | None, texto: str | None, libreria: str) -> list[dict]:
+    """libreria: "personal" | "otras" | "todas". Sin duplicados por SHA y,
+    de otras librerías, sin versiones que se sabe que están superadas."""
+    if libreria == "personal":
+        return juegos_propios(sistema, texto)
+    todos, servicios, catalogos, lin = await red()
+    propios = juegos_propios(sistema, texto) if libreria == "todas" else []
+    for j in propios:
+        # Una librería de confianza tiene una versión más nueva de este juego.
+        j["hayVersionNueva"] = bool(j["sha"] and lin.superada(j["sha"]))
+    vistos = {j["sha"] for j in todos if j["sha"]}  # nunca repetir uno que ya tengo
+    otros = []
     for servicio, catalogo in zip(servicios, catalogos):
         for j in catalogo:
             if sistema and j.get("system") != sistema:
@@ -346,13 +412,52 @@ async def juegos_listado(sistema: str | None, texto: str | None, libreria: str) 
             if texto and texto.lower() not in j.get("filename", "").lower():
                 continue
             sha = j.get("sha")
-            if sha and sha in vistos:
+            if sha and (sha in vistos or lin.superada(sha)):
                 continue
             if sha:
                 vistos.add(sha)
             otros.append({**j, "origen": servicio["id"], "origenUrl": servicio["url"],
-                          "libreria": servicio["nombre"], "editable": False})
+                          "libreria": servicio["nombre"], "confianza": servicio.get("confianza", 0),
+                          "version": lin.numero(sha) if sha else None, "editable": False})
     return propios + otros
+
+
+async def obsoletas_para_app() -> list[dict]:
+    """Versiones superadas (propias y de librerías de confianza) y dónde está
+    la actual de cada una: la app actualiza con esto lo que tenga instalado."""
+    propios, servicios, catalogos, lin = await red()
+    donde: dict[str, dict] = {}       # sha actual -> dónde descargarlo
+    tamanos: dict[str, int] = {}
+    for j in propios:
+        if j["sha"] and not j.get("esGrupo"):
+            donde.setdefault(j["sha"], {"filename": j["filename"], "sizeBytes": j["sizeBytes"], "origenUrl": None,
+                                        "fuenteExterna": j.get("fuenteExterna")})
+        for s, t in j["anteriores"]:
+            tamanos[s] = t
+    for servicio, catalogo in zip(servicios, catalogos):
+        for j in catalogo:
+            if j.get("sha") and not j.get("esGrupo"):
+                donde.setdefault(j["sha"], {"filename": j["filename"], "sizeBytes": j["sizeBytes"],
+                                            "origenUrl": servicio["url"], "fuenteExterna": j.get("fuenteExterna")})
+            for s, t in j.get("anteriores", []):
+                tamanos.setdefault(s, t)
+    sistema_de = {j["sha"]: j["system"] for j in propios if j["sha"]}
+    for catalogo in catalogos:
+        for j in catalogo:
+            if j.get("sha"):
+                sistema_de.setdefault(j["sha"], j["system"])
+    res = []
+    for viejo, n, actual, n_actual in lin.superadas():
+        if actual not in donde or viejo not in tamanos and viejo not in {j["sha"] for j in propios}:
+            continue
+        tam = tamanos.get(viejo) or next((j["sizeBytes"] for j in propios if j["sha"] == viejo), None)
+        if tam is None:
+            continue
+        d = donde[actual]
+        res.append({"sistema": sistema_de.get(actual), "sha": viejo, "tamano": tam, "n": n,
+                    "actual": {"filename": d["filename"], "sha": actual, "n": n_actual, "sizeBytes": d["sizeBytes"],
+                               "origenUrl": d["origenUrl"], "fuenteExterna": d["fuenteExterna"]}})
+    return res
 
 
 async def listar_para_app(sistema: str | None, texto: str | None, libreria: str) -> list[dict]:
@@ -420,7 +525,8 @@ async def _exigir_ticket(request: Request) -> dict:
 @router.get("/catalogo")
 async def catalogo(request: Request):
     await _exigir_ticket(request)
-    return [{k: j[k] for k in ("system", "filename", "sizeBytes", "coverUrl", "esGrupo", "tipoGrupo", "roles", "sha")}
+    return [{k: j[k] for k in ("system", "filename", "sizeBytes", "coverUrl", "esGrupo", "tipoGrupo", "roles", "sha",
+                               "version", "anteriores", "codigo", "fuenteExterna", "paginaAutor")}
             for j in juegos_propios()]
 
 

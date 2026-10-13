@@ -27,7 +27,6 @@ import config
 import consolas
 import federacion
 import main as nucleo
-import versiones
 
 router = APIRouter()
 
@@ -125,7 +124,7 @@ async def api_app(request: Request):
         if accion == "versiones":
             # Versiones superadas de los juegos de esta librería y la actual de
             # cada uno: la app actualiza lo que tenga instalado (ver versiones.py).
-            return {"obsoletas": versiones.obsoletas()}
+            return {"obsoletas": await federacion.obsoletas_para_app()}
         if accion == "version":
             return await _version()
         if accion == "apk":

@@ -136,20 +136,15 @@ def historial(sistema: str, nombre: str) -> dict | None:
                            "usuario": f["usuario"]} for f in filas]}
 
 
-def obsoletas() -> list[dict]:
-    """Versiones superadas de los juegos que siguen en la librería, con la
-    actual de cada uno: lo que necesita la app para actualizar las consolas."""
+def cadenas_propias() -> dict[str, dict]:
+    """ruta -> {"codigo", "cadena": [(sha, tamano), ...] de la más vieja a la actual}."""
     with _conectar() as con:
-        filas = con.execute(
-            """SELECT v.sha, v.tamano, v.n, j.id AS juego, j.sistema, j.ruta,
-                      a.sha AS sha_actual, a.n AS n_actual, a.tamano AS tamano_actual
-               FROM versiones v JOIN juegos j ON j.id = v.juego_id
-               JOIN versiones a ON a.juego_id = j.id
-                    AND a.n = (SELECT MAX(n) FROM versiones WHERE juego_id = j.id)
-               WHERE j.ruta IS NOT NULL AND v.n < a.n""").fetchall()
-    return [{"sistema": f["sistema"], "sha": f["sha"], "tamano": f["tamano"], "n": f["n"], "juego": f["juego"],
-             "actual": {"filename": f["ruta"].split("/", 1)[1], "sha": f["sha_actual"], "n": f["n_actual"],
-                        "sizeBytes": f["tamano_actual"]}} for f in filas]
+        filas = con.execute("SELECT j.ruta, j.codigo, v.sha, v.tamano FROM juegos j JOIN versiones v ON v.juego_id = j.id "
+                            "WHERE j.ruta IS NOT NULL ORDER BY j.ruta, v.n").fetchall()
+    res: dict[str, dict] = {}
+    for f in filas:
+        res.setdefault(f["ruta"], {"codigo": f["codigo"], "cadena": []})["cadena"].append((f["sha"], f["tamano"]))
+    return res
 
 
 def numero_actual(sistema: str, nombre: str) -> int | None:
@@ -169,15 +164,13 @@ def _sha_fichero(ruta: Path) -> str:
     return h.hexdigest()
 
 
-async def actualizar(sistema: str, nombre: str, rom, usuario: str, sin_cabecera_ok: bool) -> dict:
-    """Sustituye el ROM de un juego por su versión nueva (mismo nombre de fichero)."""
-    import asyncio
+def _juego_actualizable(sistema: str, nombre: str, extension_nueva: str):
     import main as nucleo
     sistema, nombre = nucleo.nombre_seguro(sistema), nucleo.nombre_seguro(nombre)
     ruta = config.ROOT / sistema / nombre
     if not ruta.is_file():
         raise HTTPException(400, "Solo se pueden actualizar los juegos de un solo fichero (los de varios, todavía no).")
-    if Path(rom.filename or "").suffix.lower() != ruta.suffix.lower():
+    if extension_nueva.lower() != ruta.suffix.lower():
         raise HTTPException(400, f"La versión nueva tiene que ser también {ruta.suffix}: el nombre del juego en las "
                                  "consolas no cambia (así siguen valiendo las partidas).")
     with _conectar() as con:
@@ -185,8 +178,18 @@ async def actualizar(sistema: str, nombre: str, rom, usuario: str, sin_cabecera_
     if juego is None:
         raise HTTPException(409, "Este juego aún no tiene versión registrada (se está calculando su SHA). "
                                  "Prueba en unos minutos.")
+    return sistema, nombre, ruta, juego
 
-    temporal = ruta.parent / f".actualizacion-{uuid.uuid4().hex}.tmp"
+
+def temporal_junto_a(ruta: Path) -> Path:
+    """Temporal en la misma carpeta (mismo disco: el cambio final es atómico)."""
+    return ruta.parent / f".actualizacion-{uuid.uuid4().hex}.tmp"
+
+
+async def actualizar(sistema: str, nombre: str, rom, usuario: str, sin_cabecera_ok: bool) -> dict:
+    """Sustituye el ROM de un juego por su versión nueva subida desde el gestor."""
+    sistema, nombre, ruta, juego = _juego_actualizable(sistema, nombre, Path(rom.filename or "").suffix)
+    temporal = temporal_junto_a(ruta)
     h, tamano = hashlib.sha256(), 0
     try:
         with open(temporal, "wb") as salida:
@@ -194,41 +197,49 @@ async def actualizar(sistema: str, nombre: str, rom, usuario: str, sin_cabecera_
                 h.update(trozo)
                 tamano += len(trozo)
                 salida.write(trozo)
-        sha = h.hexdigest()
-        with _conectar() as con:
-            actual = _actual(con, juego["id"])
-            conocida = con.execute("SELECT v.*, j.ruta FROM versiones v JOIN juegos j ON j.id = v.juego_id "
-                                   "WHERE v.sha = ?", (sha,)).fetchone()
-        if conocida is not None:
-            if conocida["juego_id"] != juego["id"]:
-                otro = (conocida["ruta"] or "un juego borrado").split("/", 1)[-1]
-                raise HTTPException(409, f"Ese fichero ya está en la librería como «{otro}»: no puede ser una versión de este.")
-            if conocida["n"] == actual["n"]:
-                raise HTTPException(409, "Ese fichero ya es la versión actual.")
-            raise HTTPException(409, f"Ese fichero es una versión ANTERIOR de este juego (v{conocida['n']}): "
-                                     "no se vuelve atrás.")
-        cod_nuevo = await asyncio.to_thread(cabeceras.codigo, temporal, sistema, nombre)
-        cod_viejo = juego["codigo"]
-        if cod_nuevo and cod_viejo and cod_nuevo[0] != cod_viejo:
-            raise HTTPException(409, f"No es el mismo juego: la cabecera del ROM actual dice «{cod_viejo}» y la del "
-                                     f"nuevo «{cod_nuevo[0]}» ({cod_nuevo[1]}).")
-        if cod_viejo and not cod_nuevo:
-            # El juego tiene cabecera legible: lo nuevo también tiene que tenerla
-            # (y la misma). Esto no se puede saltar confirmando.
-            raise HTTPException(409, f"El fichero nuevo no tiene una cabecera válida de {sistema.upper()}: no parece una "
-                                     f"versión de este juego («{cod_viejo}»).")
-        if not cod_viejo and not sin_cabecera_ok:
-            raise HTTPException(428, "Este formato no tiene una cabecera que se pueda comprobar: confirma que es "
-                                     "de verdad una versión nueva de este mismo juego.")
-        os.replace(temporal, ruta)
-        st = ruta.stat()
-        with _conectar() as con:
-            n = _anadir_version(con, juego["id"], sha, tamano, usuario, cod_nuevo[0] if cod_nuevo else None)
-            if cod_nuevo and not cod_viejo:
-                con.execute("UPDATE juegos SET codigo = ?, titulo = ? WHERE id = ?", (cod_nuevo[0], cod_nuevo[1], juego["id"]))
-            # El hilo de hashes no tiene que volver a leer el fichero entero.
-            con.execute("INSERT OR REPLACE INTO hashes (ruta, tamano, mtime, sha) VALUES (?, ?, ?, ?)",
-                        (f"{sistema}/{nombre}", st.st_size, st.st_mtime, sha))
-        return {"ok": True, "version": n, "sha": sha}
+        return await aplicar(sistema, nombre, temporal, h.hexdigest(), tamano, usuario, sin_cabecera_ok)
     finally:
         temporal.unlink(missing_ok=True)
+
+
+async def aplicar(sistema: str, nombre: str, temporal: Path, sha: str, tamano: int, usuario: str,
+                  sin_cabecera_ok: bool) -> dict:
+    """Comprueba que `temporal` (ya en disco, misma carpeta) es una versión
+    nueva del juego y, si lo es, lo pone en su sitio. Si no, HTTPException."""
+    import asyncio
+    sistema, nombre, ruta, juego = _juego_actualizable(sistema, nombre, Path(nombre).suffix)
+    with _conectar() as con:
+        actual = _actual(con, juego["id"])
+        conocida = con.execute("SELECT v.*, j.ruta FROM versiones v JOIN juegos j ON j.id = v.juego_id "
+                               "WHERE v.sha = ?", (sha,)).fetchone()
+    if conocida is not None:
+        if conocida["juego_id"] != juego["id"]:
+            otro = (conocida["ruta"] or "un juego borrado").split("/", 1)[-1]
+            raise HTTPException(409, f"Ese fichero ya está en la librería como «{otro}»: no puede ser una versión de este.")
+        if conocida["n"] == actual["n"]:
+            raise HTTPException(409, "Ese fichero ya es la versión actual.")
+        raise HTTPException(409, f"Ese fichero es una versión ANTERIOR de este juego (v{conocida['n']}): "
+                                 "no se vuelve atrás.")
+    cod_nuevo = await asyncio.to_thread(cabeceras.codigo, temporal, sistema, nombre)
+    cod_viejo = juego["codigo"]
+    if cod_nuevo and cod_viejo and cod_nuevo[0] != cod_viejo:
+        raise HTTPException(409, f"No es el mismo juego: la cabecera del ROM actual dice «{cod_viejo}» y la del "
+                                 f"nuevo «{cod_nuevo[0]}» ({cod_nuevo[1]}).")
+    if cod_viejo and not cod_nuevo:
+        # El juego tiene cabecera legible: lo nuevo también tiene que tenerla
+        # (y la misma). Esto no se puede saltar confirmando.
+        raise HTTPException(409, f"El fichero nuevo no tiene una cabecera válida de {sistema.upper()}: no parece una "
+                                 f"versión de este juego («{cod_viejo}»).")
+    if not cod_viejo and not sin_cabecera_ok:
+        raise HTTPException(428, "Este formato no tiene una cabecera que se pueda comprobar: confirma que es "
+                                 "de verdad una versión nueva de este mismo juego.")
+    os.replace(temporal, ruta)
+    st = ruta.stat()
+    with _conectar() as con:
+        n = _anadir_version(con, juego["id"], sha, tamano, usuario, cod_nuevo[0] if cod_nuevo else None)
+        if cod_nuevo and not cod_viejo:
+            con.execute("UPDATE juegos SET codigo = ?, titulo = ? WHERE id = ?", (cod_nuevo[0], cod_nuevo[1], juego["id"]))
+        # El hilo de hashes no tiene que volver a leer el fichero entero.
+        con.execute("INSERT OR REPLACE INTO hashes (ruta, tamano, mtime, sha) VALUES (?, ?, ?, ?)",
+                    (f"{sistema}/{nombre}", st.st_size, st.st_mtime, sha))
+    return {"ok": True, "version": n, "sha": sha}

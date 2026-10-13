@@ -25,21 +25,36 @@ propio dueño): desde la línea de órdenes del contenedor,
 Una librería retirada deja de verse y no puede volver a darse de alta sola.
 Las que no contactan con el índice en DIAS_INACTIVA dejan de listarse (se
 dan de alta cada 6 h mientras siguen públicas).
+
+CONFIANZA (0-100) de cada librería: la decide SOLO el administrador del
+índice. La librería de referencia (REFERENCIA, sund.es) vale siempre 100 y
+manda en el linaje de versiones (ver linaje.py); las demás aportan linaje
+solo desde linaje.UMBRAL. Cada 6 h el índice lee los catálogos y calcula una
+SUGERENCIA de reputación (nunca se aplica sola), comparando con la referencia:
+juegos con el mismo SHA que su versión actual, juegos más al día que ella
+(su cadena la continúa), juegos anticuados y contradicciones de historial.
+
+    python indice.py reputacion                  # sugerencias y motivos
+    python indice.py confianza <id|url> <0-99>   # fijar la confianza
 """
 
 import hashlib
-import ipaddress
 import os
 import secrets
-import socket
 import sqlite3
 import sys
 import time
 from pathlib import Path
-from urllib.parse import urlparse
+
+import asyncio
+import contextlib
+import json
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
+
+import linaje
+import redsegura
 
 DATOS = Path(os.environ.get("ROMSLIBRARY_DATOS", "/datos"))
 DB_PATH = DATOS / "indice.db"
@@ -48,8 +63,19 @@ DIAS_INACTIVA = 7
 # Solo para pruebas en red local: admite URLs privadas/http. En producción,
 # NUNCA (el índice haría peticiones a la red interna).
 URLS_PRIVADAS = os.environ.get("ROMSLIBRARY_FEDERACION_URLS_PRIVADAS", "").lower() in ("1", "true", "si", "sí")
+# La librería de referencia: confianza 100 siempre, manda en el linaje.
+REFERENCIA = os.environ.get("ROMSLIBRARY_INDICE_REFERENCIA", "https://sund.es").rstrip("/")
+CADA_REPUTACION = 6 * 3600
 
-app = FastAPI(title="Índice RomsLibrary", docs_url=None, redoc_url=None, openapi_url=None)
+
+@contextlib.asynccontextmanager
+async def _ciclo(_app):
+    tarea = asyncio.create_task(_bucle_reputacion())
+    yield
+    tarea.cancel()
+
+
+app = FastAPI(title="Índice RomsLibrary", docs_url=None, redoc_url=None, openapi_url=None, lifespan=_ciclo)
 
 
 def _conectar() -> sqlite3.Connection:
@@ -74,6 +100,11 @@ def inicializar() -> None:
             );
             """
         )
+        columnas = {f["name"] for f in con.execute("PRAGMA table_info(servicios)")}
+        for nombre, tipo in (("confianza", "INTEGER NOT NULL DEFAULT 0"), ("sugerencia", "INTEGER"),
+                             ("reputacion", "TEXT"), ("reputacion_fecha", "REAL")):
+            if nombre not in columnas:
+                con.execute(f"ALTER TABLE servicios ADD COLUMN {nombre} {tipo}")
 
 
 def _hash_secreto(secreto: str) -> str:
@@ -95,24 +126,6 @@ def _autenticar(con: sqlite3.Connection, ident: str, secreto: str) -> sqlite3.Ro
     return fila
 
 
-def _url_publica_valida(url: str) -> bool:
-    """El índice hace una petición a la URL que le dan: solo a direcciones
-    PÚBLICAS por https (nunca loopback, red privada, Tailscale/CGNAT,
-    link-local...). Sin esto se le podía hacer pedir URLs internas (SSRF)."""
-    partes = urlparse(url)
-    if partes.scheme != "https" or not partes.hostname or partes.username or partes.password:
-        return False
-    try:
-        direcciones = {info[4][0] for info in socket.getaddrinfo(partes.hostname, partes.port or 443)}
-    except socket.gaierror:
-        return False
-    for d in direcciones:
-        ip = ipaddress.ip_address(d)
-        if not ip.is_global or ip in ipaddress.ip_network("100.64.0.0/10"):
-            return False
-    return True
-
-
 @app.get("/api/health")  # el HEALTHCHECK de la imagen (compartida con el servicio)
 def salud():
     return {"ok": True}
@@ -127,7 +140,7 @@ async def alta(request: Request):
     codigo = str(datos.get("codigo", ""))
     if not url.startswith(("https://", "http://")) or not codigo:
         raise HTTPException(status_code=400, detail="Falta la URL pública o el código de verificación.")
-    if not URLS_PRIVADAS and not _url_publica_valida(url):
+    if not URLS_PRIVADAS and not redsegura.url_publica(url):
         raise HTTPException(status_code=400, detail="La URL pública tiene que ser https y resolver a una IP pública.")
     with _conectar() as con:
         fila = con.execute("SELECT * FROM servicios WHERE url = ?", (url,)).fetchone()
@@ -173,9 +186,13 @@ async def servicios(request: Request):
         if not yo["publico"]:
             raise HTTPException(status_code=403, detail="Solo las librerías públicas ven a las demás.")
         condicion, limite = _visible_sql()
-        filas = con.execute(f"SELECT id, nombre, url FROM servicios WHERE {condicion} AND id != ? ORDER BY nombre",
+        filas = con.execute(f"SELECT id, nombre, url, confianza FROM servicios WHERE {condicion} AND id != ? ORDER BY nombre",
                             (limite, yo["id"])).fetchall()
-    return [dict(f) for f in filas]
+    return [{**dict(f), "confianza": _confianza(f)} for f in filas]
+
+
+def _confianza(fila) -> int:
+    return 100 if fila["url"] == REFERENCIA else max(0, min(99, fila["confianza"] or 0))
 
 
 @app.post("/federacion/indice/ticket")
@@ -200,6 +217,11 @@ async def verificar(request: Request):
     datos = await request.json()
     with _conectar() as con:
         yo = _autenticar(con, datos.get("id"), datos.get("secreto"))
+        propio = con.execute("SELECT caduca FROM tickets WHERE ticket = ? AND origen_id = 'indice' AND destino_id = ? "
+                             "AND caduca > ?", (datos.get("ticket", ""), yo["id"], time.time())).fetchone()
+        if propio is not None:
+            # El propio índice leyendo catálogos para la reputación.
+            return {"valido": True, "origen": {"id": "indice", "nombre": "Índice"}, "caduca": propio["caduca"]}
         fila = con.execute(
             "SELECT t.*, s.nombre FROM tickets t JOIN servicios s ON s.id = t.origen_id "
             "WHERE t.ticket = ? AND t.destino_id = ? AND t.caduca > ? AND s.publico = 1 AND s.retirada IS NULL",
@@ -212,7 +234,94 @@ async def verificar(request: Request):
 inicializar()
 
 
-# ---------- Línea de órdenes (retiradas) ----------
+# ---------- Reputación (sugerida; la confianza la pone el administrador) ----------
+
+async def _catalogo(cliente: httpx.AsyncClient, servicio) -> list[dict] | None:
+    billete = secrets.token_urlsafe(32)
+    with _conectar() as con:
+        con.execute("INSERT INTO tickets (ticket, origen_id, destino_id, caduca) VALUES (?, 'indice', ?, ?)",
+                    (billete, servicio["id"], time.time() + DURACION_TICKET))
+    try:
+        r = await cliente.get(f"{servicio['url']}/federacion/catalogo", headers={"X-RomsLibrary-Ticket": billete})
+        datos = r.json() if r.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        datos = None
+    if not isinstance(datos, list):
+        return None
+    juegos = []
+    for j in datos[:20000]:
+        if not isinstance(j, dict) or not isinstance(j.get("sha"), str) or len(j["sha"]) != 64:
+            continue
+        ant = [p[0] for p in j.get("anteriores") or [] if isinstance(p, list) and p and isinstance(p[0], str) and len(p[0]) == 64]
+        juegos.append(ant + [j["sha"]])
+    return juegos
+
+
+def _puntuar(ref: list[list[str]], cadenas: list[list[str]]) -> tuple[int, dict]:
+    lin = linaje.Linaje()
+    for c in ref:
+        lin.anadir(c, "referencia")
+    actuales = {c[-1] for c in ref}
+    viejas = {s for c in ref for s in c[:-1]}
+    d = {"juegos": len(cadenas), "iguales": 0, "mas_al_dia": 0, "anticuados": 0, "conflictos": 0, "otros": 0}
+    for c in cadenas:
+        antes = len(lin.conflictos)
+        lin.anadir(c, "candidata")
+        if len(lin.conflictos) > antes:
+            d["conflictos"] += 1
+        elif c[-1] in actuales:
+            d["iguales"] += 1
+        elif c[-1] in viejas:
+            d["anticuados"] += 1
+        elif any(s in actuales or s in viejas for s in c[:-1]):
+            d["mas_al_dia"] += 1                     # continúa la cadena de la referencia
+        else:
+            d["otros"] += 1                          # juegos que la referencia no tiene: ni suma ni resta
+    buenos = d["iguales"] + d["mas_al_dia"]
+    comparables = buenos + d["anticuados"]
+    if not comparables:
+        return 0, d
+    # Proporción de juegos al día respecto a la referencia, que solo pesa del
+    # todo con 20 juegos en común; cada contradicción de historial resta 25.
+    # Tope 95: el 100 es solo de la referencia.
+    nota = 100 * buenos / comparables * min(1, buenos / 20) - 25 * d["conflictos"]
+    return max(0, min(95, round(nota))), d
+
+
+async def calcular_reputacion() -> None:
+    condicion, limite = _visible_sql()
+    with _conectar() as con:
+        filas = con.execute(f"SELECT * FROM servicios WHERE {condicion}", (limite,)).fetchall()
+    ref = next((f for f in filas if f["url"] == REFERENCIA), None)
+    if ref is None:
+        return
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10, read=60)) as cliente:
+        cat_ref = await _catalogo(cliente, ref)
+        if cat_ref is None:
+            return
+        for f in filas:
+            if f["id"] == ref["id"]:
+                continue
+            cat = await _catalogo(cliente, f)
+            if cat is None:
+                continue
+            nota, detalle = _puntuar(cat_ref, cat)
+            with _conectar() as con:
+                con.execute("UPDATE servicios SET sugerencia = ?, reputacion = ?, reputacion_fecha = ? WHERE id = ?",
+                            (nota, json.dumps(detalle), time.time(), f["id"]))
+
+
+async def _bucle_reputacion():
+    await asyncio.sleep(60)
+    while True:
+        try:
+            await calcular_reputacion()
+        except Exception as e:  # noqa: BLE001 -- el bucle no puede morir
+            print(f"[indice] reputación: {e}", flush=True)
+        await asyncio.sleep(CADA_REPUTACION)
+
+
+# ---------- Línea de órdenes (retiradas y confianza) ----------
 
 def _cli(argumentos: list[str]) -> int:
     orden = argumentos[0] if argumentos else ""
@@ -222,7 +331,28 @@ def _cli(argumentos: list[str]) -> int:
                 estado = (f"RETIRADA ({f['motivo_retirada']})" if f["retirada"] is not None
                           else "pública" if f["publico"] else "privada")
                 visto = time.strftime("%Y-%m-%d %H:%M", time.localtime(f["ultimo_contacto"]))
-                print(f"{f['id']}  {f['url']}  «{f['nombre']}»  {estado}  último contacto {visto}")
+                print(f"{f['id']}  {f['url']}  «{f['nombre']}»  {estado}  confianza {_confianza(f)}  último contacto {visto}")
+            return 0
+        if orden == "reputacion":
+            if len(argumentos) > 1 and argumentos[1] == "ahora":
+                asyncio.run(calcular_reputacion())
+            for f in con.execute("SELECT * FROM servicios ORDER BY confianza DESC, nombre"):
+                cuando = time.strftime("%Y-%m-%d %H:%M", time.localtime(f["reputacion_fecha"])) if f["reputacion_fecha"] else "nunca"
+                print(f"{f['id']}  «{f['nombre']}»  confianza {_confianza(f)}  sugerencia {f['sugerencia'] if f['sugerencia'] is not None else '-'}"
+                      f"  ({cuando})  {f['reputacion'] or ''}")
+            return 0
+        if orden == "confianza" and len(argumentos) >= 3:
+            fila = con.execute("SELECT * FROM servicios WHERE id = ? OR url = ?",
+                               (argumentos[1], argumentos[1].rstrip("/"))).fetchone()
+            if fila is None:
+                print("No existe esa librería en el índice.")
+                return 1
+            if fila["url"] == REFERENCIA:
+                print("La librería de referencia tiene siempre confianza 100.")
+                return 1
+            valor = max(0, min(99, int(argumentos[2])))
+            con.execute("UPDATE servicios SET confianza = ? WHERE id = ?", (valor, fila["id"]))
+            print(f"confianza de «{fila['nombre']}»: {valor}")
             return 0
         if orden in ("retirar", "readmitir") and len(argumentos) >= 2:
             fila = con.execute("SELECT id FROM servicios WHERE id = ? OR url = ?",

@@ -786,6 +786,20 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     <input type="file" id="rl-input-rom" style="display:none;">
                 </div>
 
+                <details id="rl-desde-enlace" style="margin-top:10px;">
+                    <summary>Añadir desde un enlace del autor</summary>
+                    <p class="rl-ayuda">Para juegos que su autor publica en su web (traducciones...): la app los
+                        descargará de ese enlace. Aquí se guarda una copia solo como respaldo.</p>
+                    <label for="rl-enl-nombre">Nombre del fichero (con extensión)</label>
+                    <input type="text" id="rl-enl-nombre" placeholder="ej. Mi juego traducido.gba">
+                    <label for="rl-enl-url">Enlace de descarga directa</label>
+                    <input type="text" id="rl-enl-url" placeholder="https://...">
+                    <label for="rl-enl-pagina">Página del autor (opcional)</label>
+                    <input type="text" id="rl-enl-pagina" placeholder="https://...">
+                    <button class="rl-btn" id="rl-enl-anadir" style="margin-top:8px;">Añadir desde el enlace</button>
+                    <div class="rl-msg" id="rl-enl-msg"></div>
+                </details>
+
                 <div id="rl-modo-grupo-campos" style="display:none;">
                     <label for="rl-nombre-juego">Nombre del juego (sin extensión, será la carpeta)</label>
                     <input type="text" id="rl-nombre-juego" placeholder="ej. Ape Escape La Invasion de los Monos">
@@ -876,6 +890,18 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             La versión nueva sustituye a la actual con el mismo nombre (tiene que tener la misma extensión) y solo se
             acepta si la cabecera del ROM es del mismo juego. Las consolas con cualquier versión anterior se actualizan
             solas al abrir la app, sin perder las partidas (los save states pueden no valer entre versiones).
+        </div>
+
+        <label>Fuente externa (web del autor)</label>
+        <input type="text" id="rl-ext-url" placeholder="Enlace de descarga directa (https://...)">
+        <input type="text" id="rl-ext-pagina" placeholder="Página del autor (opcional)" style="margin-top:4px;">
+        <div class="rl-edit-versiones" id="rl-ext-estado"></div>
+        <button class="rl-btn rl-btn-secundario" id="rl-ext-guardar">Guardar enlace</button>
+        <button class="rl-btn rl-btn-secundario" id="rl-ext-quitar">Quitar enlace</button>
+        <div class="rl-edit-aviso">
+            La app descargará el juego desde ese enlace (cuenta para las estadísticas del autor) y solo usará la copia
+            de esta librería si el enlace no responde. Al guardarlo se descarga una vez para comprobar que es este
+            juego; si es una versión nueva, entra como update.
         </div>
 
         <div class="rl-msg" id="rl-edit-msg"></div>
@@ -1265,6 +1291,9 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     body.innerHTML = '<span class="rl-card-sys">' + rlEscapar(rlNombresConsola[juego.system] || juego.system) + '</span>' +
                         (ajeno ? '<span class="rl-card-lib" title="Juego de otra librería pública">' + rlEscapar(juego.libreria) + '</span>' : '') +
                         (juego.version > 1 ? '<span class="rl-card-lib" title="Versión actual (ver Editar)">v' + (+juego.version) + '</span>' : '') +
+                        (juego.fuenteExterna ? '<span class="rl-card-lib" title="Se descarga desde la web del autor">' + (juego.fuenteEstado === 'cambiado' ? '⚠ enlace cambiado' : juego.fuenteEstado === 'caido' ? '⚠ enlace caído' : 'enlace del autor') + '</span>' : '') +
+                        (juego.hayVersionNueva ? '<span class="rl-card-lib" title="Una librería de confianza tiene una versión más nueva">hay versión nueva</span>' : '') +
+                        (ajeno && juego.confianza >= 70 ? '<span class="rl-card-lib" title="Librería de confianza (índice)">✔ confianza ' + (+juego.confianza) + '</span>' : '') +
                         '<div class="rl-card-nombre">' + rlEscapar(juego.filename) + '</div>';
 
                     const acciones = document.createElement('div');
@@ -1420,6 +1449,8 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             document.getElementById('rl-edit-update').style.display = sePuedeActualizar ? '' : 'none';
             document.getElementById('rl-edit-update-aviso').style.display = sePuedeActualizar ? '' : 'none';
             rlCargarVersiones(juego);
+            rlCargarExterno(juego);
+            document.getElementById('rl-ext-guardar').style.display = sePuedeActualizar ? '' : 'none';
             rlDialogo.showModal();
             document.getElementById('rl-edit-nombre').focus();
         }
@@ -1489,6 +1520,93 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             msg.style.color = '#ff8a8a';
             msg.textContent = 'Error: ' + data.message;
         }
+
+        // ---------- Fuente externa ----------
+        async function rlCargarExterno(juego) {
+            const estado = document.getElementById('rl-ext-estado');
+            document.getElementById('rl-ext-url').value = '';
+            document.getElementById('rl-ext-pagina').value = '';
+            document.getElementById('rl-ext-quitar').style.display = 'none';
+            estado.textContent = '';
+            try {
+                const data = await (await rlFetch('api/externo?' + new URLSearchParams({ sistema: juego.system, nombre: juego.filename }))).json();
+                const e = data.data;
+                if (!e) { estado.textContent = 'Sin enlace externo: se descarga de esta librería.'; return; }
+                document.getElementById('rl-ext-url').value = e.url;
+                document.getElementById('rl-ext-pagina').value = e.pagina || '';
+                document.getElementById('rl-ext-quitar').style.display = '';
+                const cuando = e.comprobado ? new Date(e.comprobado * 1000).toLocaleString('es-ES') : 'nunca';
+                const textos = { ok: 'Enlace correcto', cambiado: '⚠ El fichero del enlace ha cambiado: guarda el enlace otra vez para comprobarlo e importarlo', caido: '⚠ El enlace no responde (la app usa la copia de esta librería)' };
+                estado.textContent = (textos[e.estado] || e.estado) + (e.detalle ? ' · ' + e.detalle : '') + ' · revisado ' + cuando;
+            } catch (err) {
+                estado.textContent = 'Error: ' + err.message;
+            }
+        }
+
+        async function rlEnviarExterno(cuerpo) {
+            const resp = await rlFetch('api/externo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) });
+            return Object.assign(await resp.json(), { _status: resp.status });
+        }
+
+        document.getElementById('rl-ext-guardar').addEventListener('click', async () => {
+            const juego = rlJuegoEditando;
+            const msg = document.getElementById('rl-edit-msg');
+            const boton = document.getElementById('rl-ext-guardar');
+            const cuerpo = { accion: 'guardar', sistema: juego.system, nombre: juego.filename,
+                url: document.getElementById('rl-ext-url').value.trim(), pagina: document.getElementById('rl-ext-pagina').value.trim() };
+            boton.disabled = true;
+            msg.style.color = '#9fd9a0';
+            msg.textContent = 'Descargando el enlace para comprobarlo...';
+            try {
+                let data = await rlEnviarExterno(cuerpo);
+                if (!data.success && data._status === 428 && confirm(data.message + '\n\n¿Es una versión nueva de «' + juego.filename + '»?')) {
+                    data = await rlEnviarExterno({ ...cuerpo, sin_cabecera_ok: true });
+                }
+                if (!data.success) throw new Error(data.message);
+                msg.style.color = '#7bffb0';
+                msg.textContent = data.data.nueva ? 'El enlace tenía una versión nueva: guardada como v' + data.data.version + ' y enlace guardado.'
+                    : 'Enlace guardado: coincide con la versión actual (v' + data.data.version + ').';
+                rlCargarExterno(juego);
+                rlCargarVersiones(juego);
+                rlCargarJuegos();
+            } catch (err) {
+                msg.style.color = '#ff8a8a';
+                msg.textContent = 'Error: ' + err.message;
+            } finally {
+                boton.disabled = false;
+            }
+        });
+
+        document.getElementById('rl-ext-quitar').addEventListener('click', async () => {
+            const juego = rlJuegoEditando;
+            if (!confirm('¿Quitar el enlace externo? La app volverá a descargar el juego de esta librería.')) return;
+            const data = await rlEnviarExterno({ accion: 'quitar', sistema: juego.system, nombre: juego.filename });
+            document.getElementById('rl-edit-msg').textContent = data.success ? 'Enlace quitado.' : 'Error: ' + data.message;
+            rlCargarExterno(juego);
+            rlCargarJuegos();
+        });
+
+        document.getElementById('rl-enl-anadir').addEventListener('click', async () => {
+            const msg = document.getElementById('rl-enl-msg');
+            const boton = document.getElementById('rl-enl-anadir');
+            boton.disabled = true;
+            msg.style.color = '#9fd9a0';
+            msg.textContent = 'Descargando del enlace...';
+            try {
+                const data = await rlEnviarExterno({ accion: 'nuevo', sistema: document.getElementById('rl-sistema').value,
+                    nombre: document.getElementById('rl-enl-nombre').value.trim(), url: document.getElementById('rl-enl-url').value.trim(),
+                    pagina: document.getElementById('rl-enl-pagina').value.trim() });
+                if (!data.success) throw new Error(data.message);
+                msg.style.color = '#7bffb0';
+                msg.textContent = 'Añadido: ' + data.data.filename;
+                rlCargarJuegos();
+            } catch (err) {
+                msg.style.color = '#ff8a8a';
+                msg.textContent = 'Error: ' + err.message;
+            } finally {
+                boton.disabled = false;
+            }
+        });
 
         document.getElementById('rl-edit-update').addEventListener('click', () => {
             const input = document.getElementById('rl-input-update');

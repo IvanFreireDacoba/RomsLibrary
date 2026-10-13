@@ -28,6 +28,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 import ajustes
 import config
+import externos
 import federacion
 import versiones
 import main as nucleo
@@ -228,6 +229,30 @@ async def _subir_grupo(form, sistema: str):
 def historial_versiones(request: Request, usuario: str = Usuario):
     q = request.query_params
     return _ok(versiones.historial(q.get("sistema", ""), q.get("nombre", "")))
+
+
+@router.get("/api/externo")
+def info_externo(request: Request, usuario: str = Usuario):
+    q = request.query_params
+    return _ok(externos.info(q.get("sistema", ""), q.get("nombre", "")))
+
+
+@router.post("/api/externo")
+async def externo(request: Request, usuario: str = Usuario):
+    """Fuentes externas (ver externos.py): guardar o quitar el enlace de un
+    juego, o crear un juego nuevo desde un enlace."""
+    d = await request.json()
+    sistema, nombre = str(d.get("sistema", "")), str(d.get("nombre", ""))
+    try:
+        if d.get("accion") == "quitar":
+            externos.quitar(sistema, nombre)
+            return _ok()
+        if d.get("accion") == "nuevo":
+            return _ok(await externos.anadir_juego(sistema, nombre, str(d.get("url", "")), str(d.get("pagina", "")), usuario))
+        return _ok(await externos.guardar_enlace(sistema, nombre, str(d.get("url", "")), str(d.get("pagina", "")), usuario,
+                                                 sin_cabecera_ok=bool(d.get("sin_cabecera_ok"))))
+    except HTTPException as e:
+        return _error(e)
 
 
 @router.delete("/api/juegos")
