@@ -8,10 +8,14 @@ Este repositorio es el **servicio** (y su despliegue). La app Android está en
 [RomsLibrary-App](https://github.com/IvanFreireDacoba/RomsLibrary-App); su
 APK se descarga de la sección *Releases* de ese repositorio.
 
-- **Servicio** (`servicio/`): guarda los juegos, sirve la app, gestiona las
-  consolas y sus partidas, y se federa con otras librerías públicas.
+- **Servicio** (`servicio/`): guarda los juegos, sirve la app y se federa
+  con otras librerías públicas.
 - **Índice** (`servicio/app/indice.py`): servicio aparte con la lista de
   librerías públicas. El oficial está en `https://sund.es`; no aloja juegos.
+- **Partidas** (`servicio/app/partidas.py`): servicio aparte con la identidad
+  de las consolas, sus partidas y la vinculación entre ellas. Uno solo para
+  todos, en `https://sund.es/partidas/`: las partidas no dependen de la
+  librería de la que venga el juego. No guarda juegos.
 - **Gestor web** (`https://tu-dominio/gestor/`): subir, editar, borrar y
   descargar juegos; ajustes del servicio. Protegido con Authentik.
 - **App Android** ([RomsLibrary-App](https://github.com/IvanFreireDacoba/RomsLibrary-App)):
@@ -31,8 +35,11 @@ APK se descarga de la sección *Releases* de ese repositorio.
                    │ romslibrary  │◄──────►│ Authentik  │ (+ PostgreSQL)
                    │  (FastAPI)   │        └────────────┘
                    └──────┬───────┘
-                          │ volumen /datos: ROMs, carátulas, partidas,
-                          │ SQLite (consolas, ajustes, federación)
+                          │ volumen /datos: ROMs, carátulas,
+                          │ SQLite (ajustes, federación, versiones)
+
+  Las partidas no pasan por tu librería: las apps las guardan en el servicio
+  de partidas de sund.es, sea cual sea la librería.
 ```
 
 ### Librería pública o privada
@@ -159,12 +166,22 @@ enlace de descarga directa y la página del autor (`externos.py`):
 
 ### Consolas y partidas
 
-Al configurar la app, cada consola recibe un **identificador** público
-`XXXXX-XXXXX` y un nombre. Las partidas (y los *save states*) se
-sincronizan al abrir la app: gana siempre la copia más reciente. Desde
-*Sincronizar consolas* puedes vincular consolas **tuyas** para que compartan
-las partidas; la otra consola tiene que **aceptar**, y puedes desvincular o
-bloquear en cualquier momento.
+Las partidas (y los *save states*) van al **servicio de partidas** de
+sund.es, aparte de las librerías: se conservan aunque la librería de la que
+vino el juego cierre o pase a privada, y la misma consola tiene la misma
+identidad uses la librería que uses.
+
+- Cada consola tiene un **identificador** público `XXXXX-XXXXX` y un nombre.
+  Su contraseña es el ANDROID_ID (en PC, una credencial aleatoria): solo
+  viaja al servicio de partidas para abrir una sesión y allí se guarda como
+  HMAC con una clave que no está en la base de datos. Las librerías nunca la
+  ven.
+- Se sincronizan al abrir la app: gana la copia más reciente. De cada
+  partida se guardan las 3 versiones anteriores, para recuperarla si se
+  sobrescribe.
+- *Sincronizar consolas* vincula consolas **tuyas** para que compartan las
+  partidas: la otra tiene que **aceptar**, y puedes desvincular o bloquear
+  en cualquier momento.
 
 ## Despliegue
 
@@ -212,7 +229,8 @@ datos y aplica la configuración de RomsLibrary). Después:
    servicio (por defecto viene `https://sund.es`), el nombre de la consola y,
    solo si tu librería es privada, la **clave de acceso** del gestor.
 3. La app enseña su **identificador** debajo del título: es el que usarás
-   para vincular otras consolas tuyas.
+   para vincular otras consolas tuyas. Las partidas van siempre al servicio
+   de partidas de sund.es, no a tu librería.
 
 La app se actualiza sola: tu servicio le ofrece siempre la última versión
 oficial.
@@ -223,7 +241,7 @@ Todo lo importante está en volúmenes de Docker:
 
 | Volumen | Contenido |
 |---|---|
-| `romslibrary-datos` | juegos, carátulas, partidas de las consolas y `romslibrary.db` |
+| `romslibrary-datos` | juegos, carátulas y `romslibrary.db` |
 | `authentik-postgres` | usuarios y configuración de Authentik |
 
 ```bash
