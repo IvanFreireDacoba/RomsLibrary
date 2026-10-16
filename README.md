@@ -69,9 +69,14 @@ más reciente y al bajar se conserva la fecha. Donde RetroArch no separa por
 núcleo (Knulli), se usa el núcleo habitual de cada consola
 (`NUCLEO_POR_DEFECTO`). Fuera de RetroArch (PCSX2, Dolphin...) aún no.
 
-La consola se registra sola en la librería la primera vez, con una
-credencial aleatoria guardada en `~/.config/romslibrary/ajustes.json`
-(`%APPDATA%\RomsLibrary` en Windows).
+Las partidas van al servicio de partidas de sund.es (`https://sund.es/partidas/`),
+aparte de la librería: la consola tiene la misma identidad uses la librería
+que uses, y las partidas no se pierden aunque la librería cierre o pase a
+privada. Se registra sola la primera vez, con una credencial aleatoria
+guardada en `~/.config/romslibrary/ajustes.json` (`%APPDATA%\RomsLibrary` en
+Windows), que es su contraseña: solo viaja al servicio de partidas.
+*Start → Sincronizar con otras consolas* vincula esta consola con otras tuyas
+(Android incluidas); la otra tiene que aceptar.
 
 
 ## Compilar
