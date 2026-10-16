@@ -58,7 +58,10 @@ APK se descarga de la sección *Releases* de ese repositorio.
   subirlo** (por defecto, «Solo para mí»; se cambia en *Editar*). Compartir
   exige indicar **por qué se puede compartir**: homebrew o juego propio,
   licencia libre (cuál), permiso del titular (de quién), fan game original o
-  enlace a la web de su autor. Queda anotado quién y cuándo. Solo lo
+  enlace a la web de su autor. Si el contenido es un juego publicado según
+  No-Intro/Redump (por el contenido, no por el nombre; también ROM hacks), el
+  gestor lo avisa en rojo y pide confirmación expresa, sin impedirlo ni
+  guardar quién confirma. Solo lo
   compartido sale por la API sin clave, por la federación y en las copias
   entre librerías; lo «Solo para mí» no sale nunca.
 - **Acceso a la librería entera:** con su clave, o desde la app con
