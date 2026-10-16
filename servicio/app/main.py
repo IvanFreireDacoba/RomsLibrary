@@ -1245,12 +1245,14 @@ import api_app  # noqa: E402
 import federacion  # noqa: E402
 import gestor  # noqa: E402
 import externos  # noqa: E402
+import fichas  # noqa: E402
 import verificacion  # noqa: E402
 import versiones  # noqa: E402
 
 federacion.inicializar()
 versiones.inicializar()
 externos.inicializar()
+fichas.inicializar()
 verificacion.inicializar()
 app.include_router(api_app.router)
 app.include_router(federacion.router)

@@ -252,6 +252,12 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         .rl-clave-fila button { padding: 6px 10px; }
         .rl-card-lib { display: inline-block; margin-left: 6px; background: #2a2440; color: #c8a2ff; border-radius: 4px; padding: 1px 6px; font-size: 11px; }
         .rl-copias { flex: none; }
+        .rl-idiomas { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+        .rl-idiomas label { display: flex; gap: 4px; align-items: center; font-size: 0.9em; }
+        .rl-card-corrupto { background: #4a1f24; color: #ff9a9a; }
+        .rl-corruptos { flex: none; margin-bottom: 8px; padding: 8px 10px; border: 1px solid #6b2a30; border-radius: 6px;
+            background: #2a1316; color: #ffb0b0; font-size: 0.9em; }
+        .rl-corruptos:empty { display: none; }
         .rl-copia { font-size: 12px; padding: 4px 0; color: #9fd9a0; }
         .rl-copia-error { color: #ff8a8a; }
         .rl-copia-hecha { color: #7bffb0; }
@@ -739,6 +745,11 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     <option value="rpgmaker">RPG Maker (Kirin)</option>
                 </select>
 
+                <div class="rl-idiomas" style="margin-top:6px;">
+                    <label><input type="radio" name="rl-origen" value="fichero" checked> Subir el fichero</label>
+                    <label><input type="radio" name="rl-origen" value="enlace"> Solo un enlace de descarga (fangames, traducciones...)</label>
+                </div>
+
                 <label style="display:block;margin-top:6px;" id="rl-label-modo-grupo">
                     <input type="checkbox" id="rl-modo-grupo"> Juego de varios ficheros (PS1 cue+bin, multidisco)
                 </label>
@@ -786,19 +797,17 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     <input type="file" id="rl-input-rom" style="display:none;">
                 </div>
 
-                <details id="rl-desde-enlace" style="margin-top:10px;">
-                    <summary>Añadir desde un enlace del autor</summary>
-                    <p class="rl-ayuda">Para juegos que su autor publica en su web (traducciones...): la app los
-                        descargará de ese enlace. Aquí se guarda una copia solo como respaldo.</p>
-                    <label for="rl-enl-nombre">Nombre del fichero (con extensión)</label>
-                    <input type="text" id="rl-enl-nombre" placeholder="ej. Mi juego traducido.gba">
+                <div id="rl-enlace-campos" style="display:none;">
+                    <p class="rl-ayuda">No se sube nada: el servidor descarga el juego del enlace (guarda una copia solo
+                        como respaldo) y la app lo instalará desde ese enlace, así cuenta para las estadísticas del autor.
+                        Tiene que ser el enlace de descarga directa del fichero, no la página. En RPG Maker, un .zip con el juego.</p>
+                    <label for="rl-enl-nombre">Nombre del juego</label>
+                    <input type="text" id="rl-enl-nombre" placeholder="ej. Mi fangame (la extensión se toma del enlace si no la pones)">
                     <label for="rl-enl-url">Enlace de descarga directa</label>
                     <input type="text" id="rl-enl-url" placeholder="https://...">
                     <label for="rl-enl-pagina">Página del autor (opcional)</label>
                     <input type="text" id="rl-enl-pagina" placeholder="https://...">
-                    <button class="rl-btn" id="rl-enl-anadir" style="margin-top:8px;">Añadir desde el enlace</button>
-                    <div class="rl-msg" id="rl-enl-msg"></div>
-                </details>
+                </div>
 
                 <div id="rl-modo-grupo-campos" style="display:none;">
                     <label for="rl-nombre-juego">Nombre del juego (sin extensión, será la carpeta)</label>
@@ -819,6 +828,15 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     </div>
 
                 </div>
+
+                <label>Idiomas del juego</label>
+                <div class="rl-idiomas" id="rl-idiomas"></div>
+                <label for="rl-titulo">Es otro idioma de... (opcional)</label>
+                <input type="text" id="rl-titulo" list="rl-titulos" placeholder="Título del juego ya subido en otro idioma">
+                <datalist id="rl-titulos"></datalist>
+                <p class="rl-ayuda">Las versiones de un juego en distintos idiomas se suben por separado (cada una con su
+                    nombre de fichero y sus propias versiones) y se juntan por este título: la app instala la española y,
+                    si no hay, la inglesa.</p>
 
                 <label>Carátula (opcional — solo si es tuya, nunca se descarga sola)</label>
                 <div class="rl-drop" id="rl-drop-cover">Arrastra una imagen aquí, o haz clic para elegirla</div>
@@ -853,6 +871,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     <input type="text" id="rl-filtro-nombre" placeholder="Buscar por nombre...">
                 </div>
                 <div id="rl-copias" class="rl-copias"></div>
+                <div id="rl-corruptos" class="rl-corruptos"></div>
 
                 <div class="rl-grid" id="rl-grid"></div>
             </div>
@@ -881,6 +900,20 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             <div class="rl-drop" id="rl-drop-edit-cover">Arrastra una imagen nueva aquí, o haz clic para elegirla</div>
             <input type="file" id="rl-input-edit-cover" accept="image/png,image/jpeg,image/webp" style="display:none;">
         </div>
+
+        <label>Idiomas</label>
+        <div class="rl-idiomas" id="rl-edit-idiomas"></div>
+        <label for="rl-edit-titulo">Título común (junta las versiones en otros idiomas)</label>
+        <input type="text" id="rl-edit-titulo" list="rl-titulos">
+
+        <label for="rl-edit-corrupto">Estado del archivo</label>
+        <select id="rl-edit-corrupto">
+            <option value="auto">Automático (según la verificación)</option>
+            <option value="1">Archivo corrupto</option>
+            <option value="0">Está bien (quitar el aviso automático)</option>
+        </select>
+        <input type="text" id="rl-edit-motivo" placeholder="Motivo (opcional): p. ej. se cuelga al arrancar" style="margin-top:4px;">
+        <div class="rl-edit-aviso" id="rl-edit-corrupto-info"></div>
 
         <label>Versiones</label>
         <div class="rl-edit-versiones" id="rl-edit-versiones"></div>
@@ -912,6 +945,26 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
     </dialog>
 
     <script>
+        const RL_IDIOMAS = { es: 'Español', en: 'Inglés', ja: 'Japonés', fr: 'Francés', de: 'Alemán', it: 'Italiano', pt: 'Portugués' };
+        function rlPintarIdiomas(id, seleccion) {
+            const caja = document.getElementById(id);
+            caja.innerHTML = '';
+            for (const [codigo, nombre] of Object.entries(RL_IDIOMAS)) {
+                const label = document.createElement('label');
+                const check = document.createElement('input');
+                check.type = 'checkbox';
+                check.value = codigo;
+                check.checked = seleccion.includes(codigo);
+                label.append(check, ' ' + nombre);
+                caja.appendChild(label);
+            }
+        }
+        function rlLeerIdiomas(id) {
+            return [...document.querySelectorAll('#' + id + ' input:checked')].map((c) => c.value).join(',');
+        }
+        function rlEtiquetaIdiomas(juego) {
+            return (juego.idiomas || []).map((i) => i.toUpperCase()).join(' ');
+        }
         const rlNombresConsola = { gb: 'GameBoy', gbc: 'GameBoy Color', gba: 'GameBoy Advance', n64: 'N64', gc: 'GameCube', switch: 'Switch', psx: 'PlayStation', ps2: 'PlayStation 2', psp: 'PSP', rpgmaker: 'RPG Maker' };
 
         function rlSetupDrop(dropId, inputId, textoVacio, onFile) {
@@ -1004,14 +1057,22 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         // Qué campos se ven: Switch tiene su propio panel (base/updates/DLCs)
         // y no usa el checkbox de "varios ficheros"; el resto de sistemas
         // alterna entre fichero suelto y grupo (cue+bin, multidisco).
-        function rlActualizarSubmodoGrupo() {
-            const esSwitch = document.getElementById('rl-sistema').value === 'switch';
-            const grupo = document.getElementById('rl-modo-grupo').checked;
-            document.getElementById('rl-switch-campos').style.display = esSwitch ? 'block' : 'none';
-            document.getElementById('rl-label-modo-grupo').style.display = esSwitch ? 'none' : 'block';
-            document.getElementById('rl-modo-simple-campos').style.display = !esSwitch && !grupo ? 'block' : 'none';
-            document.getElementById('rl-modo-grupo-campos').style.display = !esSwitch && grupo ? 'block' : 'none';
+        function rlDesdeEnlace() {
+            return document.querySelector('input[name="rl-origen"]:checked').value === 'enlace';
         }
+
+        function rlActualizarSubmodoGrupo() {
+            const enlace = rlDesdeEnlace();
+            const esSwitch = !enlace && document.getElementById('rl-sistema').value === 'switch';
+            const grupo = document.getElementById('rl-modo-grupo').checked;
+            document.getElementById('rl-enlace-campos').style.display = enlace ? 'block' : 'none';
+            document.getElementById('rl-switch-campos').style.display = esSwitch ? 'block' : 'none';
+            document.getElementById('rl-label-modo-grupo').style.display = esSwitch || enlace ? 'none' : 'block';
+            document.getElementById('rl-modo-simple-campos').style.display = !enlace && !esSwitch && !grupo ? 'block' : 'none';
+            document.getElementById('rl-modo-grupo-campos').style.display = !enlace && !esSwitch && grupo ? 'block' : 'none';
+        }
+        document.querySelectorAll('input[name="rl-origen"]').forEach((r) => r.addEventListener('change', rlActualizarSubmodoGrupo));
+        rlPintarIdiomas('rl-idiomas', ['es']);
 
         document.getElementById('rl-modo-grupo').addEventListener('change', rlActualizarSubmodoGrupo);
 
@@ -1051,7 +1112,21 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             const esGrupo = document.getElementById('rl-modo-grupo').checked;
 
             let form;
-            if (sistema === 'switch') {
+            if (rlDesdeEnlace()) {
+                const nombre = document.getElementById('rl-enl-nombre').value.trim();
+                const url = document.getElementById('rl-enl-url').value.trim();
+                if (!nombre || /[\\/]/.test(nombre) || !url.startsWith('https://')) {
+                    msg.textContent = 'Falta el nombre (sin / ni \\) o el enlace https://';
+                    msg.style.color = '#ff8a8a';
+                    return;
+                }
+                form = new FormData();
+                form.append('modo', 'enlace');
+                form.append('sistema', sistema);
+                form.append('nombre', nombre);
+                form.append('url', url);
+                form.append('pagina', document.getElementById('rl-enl-pagina').value.trim());
+            } else if (sistema === 'switch') {
                 const nombreJuego = document.getElementById('rl-switch-nombre').value.trim();
                 const base = document.getElementById('rl-input-switch-base').files[0];
                 const conUpdates = document.getElementById('rl-switch-con-updates').checked;
@@ -1143,6 +1218,8 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 form.append('rom', romInput.files[0]);
             }
             if (coverInput.files.length > 0) form.append('cover', coverInput.files[0]);
+            form.append('idiomas', rlLeerIdiomas('rl-idiomas'));
+            form.append('titulo', document.getElementById('rl-titulo').value.trim());
 
             const btn = document.getElementById('rl-confirmar');
             btn.disabled = true;
@@ -1154,7 +1231,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             try {
                 const data = await rlSubirConProgreso(form, msg);
                 if (data.success) {
-                    msg.textContent = 'Subido correctamente.';
+                    msg.textContent = rlDesdeEnlace() ? 'Añadido desde el enlace: ' + data.data.filename : 'Subido correctamente.';
                     msg.style.color = '#7bffb0';
                     document.getElementById('rl-nombre').value = '';
                     document.getElementById('rl-nombre-juego').value = '';
@@ -1166,6 +1243,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                         document.getElementById(id).dispatchEvent(new Event('change'));
                     }
                     document.getElementById('rl-switch-nombre').value = '';
+                    for (const id of ['rl-enl-nombre', 'rl-enl-url', 'rl-enl-pagina', 'rl-titulo']) document.getElementById(id).value = '';
                     coverInput.value = '';
                     rlActualizarDrop(document.getElementById('rl-drop-rom'), document.getElementById('rl-input-rom'), 'Arrastra el fichero aquí, o haz clic para elegirlo');
                     rlActualizarDrop(document.getElementById('rl-drop-cover'), coverInput, 'Arrastra una imagen aquí, o haz clic para elegirla');
@@ -1217,6 +1295,10 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 // (que es al final de TODO): el aviso de "copiando" se pone
                 // en cuanto el progreso llega al 100%.
                 const avisarCopiando = () => {
+                    if (form.get('modo') === 'enlace') {
+                        msg.textContent = 'El servidor está descargando el juego del enlace para comprobarlo... No cierres ni recargues esta pestaña.';
+                        return;
+                    }
                     const minutos = Math.max(1, Math.round(rlUltimoTamano / 5.5e6 / 60));
                     msg.textContent = 'Recibido. Copiando a la librería en el servidor... '
                         + (minutos > 1 ? '(unos ' + minutos + ' min) ' : '') + 'No cierres ni recargues esta pestaña.';
@@ -1240,6 +1322,28 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             });
         }
         let rlUltimoTamano = 0;
+
+        // Títulos (para juntar idiomas) y aviso de archivos corruptos de la librería propia.
+        const rlTitulosRepetidos = {};
+        function rlPrepararFichas(juegos) {
+            const propios = juegos.filter((j) => !j.origen);
+            for (const k of Object.keys(rlTitulosRepetidos)) delete rlTitulosRepetidos[k];
+            propios.forEach((j) => { const k = j.system + '/' + j.titulo; rlTitulosRepetidos[k] = (rlTitulosRepetidos[k] || 0) + 1; });
+            const lista = document.getElementById('rl-titulos');
+            lista.innerHTML = '';
+            [...new Set(propios.map((j) => j.titulo).filter(Boolean))].sort().forEach((t) => {
+                const o = document.createElement('option');
+                o.value = t;
+                lista.appendChild(o);
+            });
+            const corruptos = propios.filter((j) => j.corrupto);
+            const aviso = document.getElementById('rl-corruptos');
+            aviso.innerHTML = corruptos.length === 0 ? '' : '<strong>✖ ' + corruptos.length + (corruptos.length === 1
+                ? ' juego marcado como archivo corrupto' : ' juegos marcados como archivo corrupto')
+                + '</strong> (la app avisa antes de instalarlos; sube la versión buena con Editar → Añadir update):<br>'
+                + corruptos.map((j) => rlEscapar((rlNombresConsola[j.system] || j.system) + ' · ' + j.filename)
+                    + ' <span class="rl-ayuda">— ' + rlEscapar(j.motivoCorrupto) + '</span>').join('<br>');
+        }
 
         async function rlCargarJuegos() {
             const grid = document.getElementById('rl-grid');
@@ -1265,6 +1369,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     return;
                 }
                 grid.innerHTML = '';
+                rlPrepararFichas(juegos);
                 for (const juego of juegos) {
                     const card = document.createElement('div');
                     card.className = 'rl-card';
@@ -1293,7 +1398,10 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                         (juego.version > 1 ? '<span class="rl-card-lib" title="Versión actual (ver Editar)">v' + (+juego.version) + '</span>' : '') +
                         (juego.fuenteExterna ? '<span class="rl-card-lib" title="Se descarga desde la web del autor">' + (juego.fuenteEstado === 'cambiado' ? '⚠ enlace cambiado' : juego.fuenteEstado === 'caido' ? '⚠ enlace caído' : 'enlace del autor') + '</span>' : '') +
                         (juego.verificacion && juego.verificacion.estado === 'verificado' ? '<span class="rl-card-lib" title="' + rlEscapar(juego.verificacion.nombre) + '">✔ ' + rlEscapar(juego.verificacion.fuente) + '</span>' : '') +
-                        (juego.verificacion && juego.verificacion.estado === 'dudoso' ? '<span class="rl-card-lib" style="color:#ffb36b" title="' + rlEscapar(juego.verificacion.detalle) + '">⚠ volcado dudoso</span>' : '') +
+                        (juego.corrupto ? '<span class="rl-card-lib rl-card-corrupto" title="' + rlEscapar(juego.motivoCorrupto) + '">✖ archivo corrupto</span>' : '') +
+                        (!juego.corrupto && juego.verificacion && juego.verificacion.estado === 'dudoso' ? '<span class="rl-card-lib" style="color:#ffb36b" title="' + rlEscapar(juego.verificacion.detalle) + '">⚠ volcado dudoso (revisado: está bien)</span>' : '') +
+                        (rlEtiquetaIdiomas(juego) ? '<span class="rl-card-lib" title="Idiomas' + (juego.idiomasDeducidos ? ' (deducidos del volcado; cámbialos en Editar)' : '') + '">' + rlEscapar(rlEtiquetaIdiomas(juego)) + (juego.idiomasDeducidos ? '?' : '') + '</span>' : '') +
+                        (juego.titulo && rlTitulosRepetidos[juego.system + '/' + juego.titulo] > 1 ? '<span class="rl-card-lib" title="Hay versiones en otros idiomas con el título «' + rlEscapar(juego.titulo) + '»">otros idiomas</span>' : '') +
                         (juego.hayVersionNueva ? '<span class="rl-card-lib" title="Una librería de confianza tiene una versión más nueva">hay versión nueva</span>' : '') +
                         (ajeno && juego.confianza >= 70 ? '<span class="rl-card-lib" title="Librería de confianza (índice)">✔ confianza ' + (+juego.confianza) + '</span>' : '') +
                         '<div class="rl-card-nombre">' + rlEscapar(juego.filename) + '</div>';
@@ -1450,6 +1558,15 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             const sePuedeActualizar = !juego.esGrupo && juego.system !== 'rpgmaker';
             document.getElementById('rl-edit-update').style.display = sePuedeActualizar ? '' : 'none';
             document.getElementById('rl-edit-update-aviso').style.display = sePuedeActualizar ? '' : 'none';
+            rlPintarIdiomas('rl-edit-idiomas', juego.idiomas || []);
+            document.getElementById('rl-edit-titulo').value = juego.titulo || '';
+            document.getElementById('rl-edit-corrupto').value = juego.corruptoAutomatico ? 'auto'
+                : juego.corrupto ? '1' : juego.corruptoDescartado ? '0' : 'auto';
+            document.getElementById('rl-edit-motivo').value = juego.corrupto && !juego.corruptoAutomatico ? juego.motivoCorrupto : '';
+            document.getElementById('rl-edit-corrupto-info').textContent = juego.corrupto
+                ? '✖ Ahora mismo: archivo corrupto — ' + juego.motivoCorrupto
+                : 'Si marcas el archivo como corrupto, la app avisa antes de instalarlo y, si hay otro idioma, prefiere ese.';
+            rlFichaOriginal = rlFichaEditada();
             rlCargarVersiones(juego);
             rlCargarExterno(juego);
             document.getElementById('rl-ext-guardar').style.display = sePuedeActualizar ? '' : 'none';
@@ -1467,6 +1584,12 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         });
 
         document.getElementById('rl-edit-cancelar').addEventListener('click', () => rlDialogo.close());
+
+        let rlFichaOriginal = '';
+        function rlFichaEditada() {
+            return JSON.stringify({ idiomas: rlLeerIdiomas('rl-edit-idiomas'), titulo: document.getElementById('rl-edit-titulo').value.trim(),
+                corrupto: document.getElementById('rl-edit-corrupto').value, motivo: document.getElementById('rl-edit-motivo').value.trim() });
+        }
 
         // ---------- Versiones (historial + "Añadir update") ----------
         async function rlCargarVersiones(juego) {
@@ -1595,28 +1718,6 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             rlCargarJuegos();
         });
 
-        document.getElementById('rl-enl-anadir').addEventListener('click', async () => {
-            const msg = document.getElementById('rl-enl-msg');
-            const boton = document.getElementById('rl-enl-anadir');
-            boton.disabled = true;
-            msg.style.color = '#9fd9a0';
-            msg.textContent = 'Descargando del enlace...';
-            try {
-                const data = await rlEnviarExterno({ accion: 'nuevo', sistema: document.getElementById('rl-sistema').value,
-                    nombre: document.getElementById('rl-enl-nombre').value.trim(), url: document.getElementById('rl-enl-url').value.trim(),
-                    pagina: document.getElementById('rl-enl-pagina').value.trim() });
-                if (!data.success) throw new Error(data.message);
-                msg.style.color = '#7bffb0';
-                msg.textContent = 'Añadido: ' + data.data.filename;
-                rlCargarJuegos();
-            } catch (err) {
-                msg.style.color = '#ff8a8a';
-                msg.textContent = 'Error: ' + err.message;
-            } finally {
-                boton.disabled = false;
-            }
-        });
-
         document.getElementById('rl-edit-update').addEventListener('click', () => {
             const input = document.getElementById('rl-input-update');
             input.value = '';
@@ -1656,7 +1757,9 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             const nuevoNombre = base + partes.ext;
             const renombrar = nuevoNombre !== juego.filename;
             const cambiarCaratula = coverInput.files.length > 0;
-            if (!renombrar && !cambiarCaratula) {
+            const ficha = rlFichaEditada();
+            const cambiarFicha = ficha !== rlFichaOriginal;
+            if (!renombrar && !cambiarCaratula && !cambiarFicha) {
                 rlDialogo.close();
                 return;
             }
@@ -1676,6 +1779,20 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     const data = await (await rlFetch('api/juegos', { method: 'POST', body: form })).json();
                     if (!data.success) throw new Error(data.message);
                     nombreActual = nuevoNombre;
+                }
+                if (cambiarFicha) {
+                    msg.textContent = 'Guardando idiomas y estado...';
+                    const datos = JSON.parse(ficha);
+                    const form = new FormData();
+                    form.append('modo', 'ficha');
+                    form.append('sistema', juego.system);
+                    form.append('nombre', nombreActual);
+                    form.append('idiomas', datos.idiomas);
+                    form.append('titulo', datos.titulo);
+                    form.append('corrupto', datos.corrupto);
+                    form.append('motivo', datos.motivo);
+                    const data = await (await rlFetch('api/juegos', { method: 'POST', body: form })).json();
+                    if (!data.success) throw new Error(data.message);
                 }
                 if (cambiarCaratula) {
                     msg.textContent = 'Subiendo carátula...';

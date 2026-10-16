@@ -8,7 +8,11 @@ enlace no responde o no coincide.
   con el juego: si es la versión actual, se guarda el enlace; si es una
   versión nueva del mismo juego (cabecera), entra como update (versiones.py);
   si no, se rechaza.
-- También se puede crear un juego nuevo directamente desde un enlace.
+- También se puede crear un juego nuevo directamente desde un enlace (con su
+  nombre, carátula e idiomas), sin subir nada: p. ej. un fangame. Si el
+  nombre no lleva extensión se toma la del fichero que da el enlace. Los
+  .zip de RPG Maker (y de PS1 con cue+bin) se descomprimen aquí como al
+  subirlos; la app comprueba lo que baja del enlace con su SHA (sha_enlace).
 - Cada 12 h se mira (sin descargar) si el fichero del enlace ha cambiado
   (ETag, Last-Modified, tamaño): el gestor avisa y el administrador decide
   si lo importa. Nunca se importa solo.
@@ -18,7 +22,7 @@ enlace no responde o no coincide.
 
 import asyncio
 import hashlib
-import shutil
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -48,6 +52,8 @@ def inicializar() -> None:
                 etag TEXT, modificado TEXT, tamano INTEGER, comprobado REAL, estado TEXT NOT NULL DEFAULT 'ok',
                 detalle TEXT NOT NULL DEFAULT ''
             )""")
+        if "sha_enlace" not in {c[1] for c in con.execute("PRAGMA table_info(externos)")}:
+            con.execute("ALTER TABLE externos ADD COLUMN sha_enlace TEXT")
 
 
 def _validar_url(url: str, campo: str) -> str:
@@ -81,17 +87,27 @@ async def _descargar(url: str, destino: Path) -> tuple[str, int, dict]:
                             raise HTTPException(413, "El fichero del enlace es demasiado grande.")
                         h.update(trozo)
                         salida.write(trozo)
-                cabeceras = {"etag": r.headers.get("etag"), "modificado": r.headers.get("last-modified")}
+                cabeceras = {"etag": r.headers.get("etag"), "modificado": r.headers.get("last-modified"),
+                             "nombre": _nombre_de_respuesta(r)}
     except httpx.HTTPError as e:
         raise HTTPException(502, f"No se pudo descargar el enlace: {e}") from None
     return h.hexdigest(), tamano, cabeceras
 
 
-def _guardar(juego_id: str, url: str, pagina: str, tamano: int, cab: dict) -> None:
+def _nombre_de_respuesta(r: httpx.Response) -> str:
+    """Nombre del fichero según el servidor (Content-Disposition) o la URL final."""
+    from urllib.parse import unquote, urlparse
+    disp = r.headers.get("content-disposition", "")
+    m = re.search(r"filename\*\s*=\s*[^']*''([^;]+)", disp) or re.search(r'filename\s*=\s*"?([^";]+)"?', disp)
+    nombre = unquote(m.group(1)) if m else unquote(urlparse(str(r.url)).path.rsplit("/", 1)[-1])
+    return nombre.strip()[:200]
+
+
+def _guardar(juego_id: str, url: str, pagina: str, tamano: int, cab: dict, sha_enlace: str | None = None) -> None:
     with _conectar() as con:
-        con.execute("INSERT OR REPLACE INTO externos (juego_id, url, pagina, etag, modificado, tamano, comprobado, estado, detalle) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', '')",
-                    (juego_id, url, pagina, cab.get("etag"), cab.get("modificado"), tamano, time.time()))
+        con.execute("INSERT OR REPLACE INTO externos (juego_id, url, pagina, etag, modificado, tamano, comprobado, estado, "
+                    "detalle, sha_enlace) VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', '', ?)",
+                    (juego_id, url, pagina, cab.get("etag"), cab.get("modificado"), tamano, time.time(), sha_enlace))
 
 
 async def guardar_enlace(sistema: str, nombre: str, url: str, pagina: str, usuario: str, sin_cabecera_ok: bool) -> dict:
@@ -115,36 +131,61 @@ async def guardar_enlace(sistema: str, nombre: str, url: str, pagina: str, usuar
         temporal.unlink(missing_ok=True)
 
 
-async def anadir_juego(sistema: str, nombre: str, url: str, pagina: str, usuario: str) -> dict:
-    """Juego nuevo creado desde un enlace (se guarda copia de respaldo aquí)."""
+def _nombre_final(sistema: str, nombre: str, nombre_enlace: str) -> str:
+    """El nombre que da el administrador, con extensión: la suya si es válida
+    para la consola; si no, la del fichero del enlace."""
     import main as nucleo
+    extensiones = nucleo.EXTENSIONES_POR_SISTEMA[sistema]
+    if any(nombre.lower().endswith(e) for e in extensiones):
+        return nombre
+    ext = Path(nombre_enlace).suffix.lower()
+    if ext in extensiones:
+        return nombre + ext
+    raise HTTPException(400, f"No se sabe qué tipo de fichero da el enlace («{nombre_enlace or 'sin nombre'}»): escribe "
+                             f"el nombre con su extensión ({', '.join(sorted(extensiones))}).")
+
+
+async def anadir_juego(sistema: str, nombre: str, url: str, pagina: str, usuario: str, caratula=None,
+                       idiomas=None, titulo: str = "") -> dict:
+    """Juego nuevo creado desde un enlace (se guarda copia de respaldo aquí)."""
+    import federacion
+    import fichas
+    import main as nucleo
+    from starlette.datastructures import UploadFile
     url = _validar_url(url, "Enlace")
     pagina = _validar_url(pagina, "Página del autor") if pagina.strip() else ""
-    sistema, nombre = nucleo.nombre_seguro(sistema), nucleo.nombre_seguro(nombre.strip())
-    extensiones = nucleo.EXTENSIONES_POR_SISTEMA.get(sistema)
-    if not extensiones or sistema == "rpgmaker" or not any(nombre.lower().endswith(e) for e in extensiones):
-        raise HTTPException(400, f"Extensión no válida para {sistema}: {sorted(extensiones or [])}.")
+    sistema, nombre = nucleo.nombre_seguro(sistema), " ".join(nombre.split())
+    if sistema not in nucleo.EXTENSIONES_POR_SISTEMA:
+        raise HTTPException(400, "Consola desconocida.")
+    if not nombre:
+        raise HTTPException(400, "Falta el nombre del juego.")
+    nucleo.nombre_seguro(nombre)
     carpeta = config.ROOT / sistema
     carpeta.mkdir(parents=True, exist_ok=True)
-    destino = carpeta / nombre
-    if destino.exists():
-        raise HTTPException(409, "Ya existe un juego con ese nombre.")
-    temporal = versiones.temporal_junto_a(destino)
+    temporal = versiones.temporal_junto_a(carpeta / nombre)
     try:
         sha, tamano, cab = await _descargar(url, temporal)
+        nombre = nucleo.nombre_seguro(_nombre_final(sistema, nombre, cab.get("nombre") or ""))
         with versiones._conectar() as con:
             conocida = con.execute("SELECT j.ruta FROM versiones v JOIN juegos j ON j.id = v.juego_id WHERE v.sha = ?",
                                    (sha,)).fetchone()
         if conocida is not None:
             raise HTTPException(409, f"Ese fichero ya está en la librería como «{(conocida['ruta'] or 'un juego borrado').split('/', 1)[-1]}».")
-        shutil.move(str(temporal), str(destino))
-        st = destino.stat()
+        # Mismo camino que una subida desde el gestor (descomprime RPG Maker y PS1, valida y guarda la carátula).
+        with open(temporal, "rb") as f:
+            r = await nucleo.subir_juego(nucleo.PETICION_INTERNA, nucleo.TOKEN_SISTEMA, system=sistema, filename=nombre,
+                                         rom=UploadFile(f, filename=nombre), cover=caratula)
+        final = r["filename"]
+        ruta = carpeta / final
+        sha_juego = sha if ruta.is_file() else await asyncio.to_thread(federacion._sha_juego, ruta)
+        tam_juego, mtime = federacion._firma(ruta)
         with versiones._conectar() as con:
             con.execute("INSERT OR REPLACE INTO hashes (ruta, tamano, mtime, sha) VALUES (?, ?, ?, ?)",
-                        (f"{sistema}/{nombre}", st.st_size, st.st_mtime, sha))
-        await asyncio.to_thread(versiones.registrar, sistema, nombre, sha, tamano)
-        _guardar(_juego_id(sistema, nombre), url, pagina, tamano, cab)
-        return {"ok": True, "filename": nombre, "sha": sha}
+                        (f"{sistema}/{final}", tam_juego, mtime, sha_juego))
+        await asyncio.to_thread(versiones.registrar, sistema, final, sha_juego, tam_juego)
+        _guardar(_juego_id(sistema, final), url, pagina, tamano, cab, sha if sha != sha_juego else None)
+        fichas.guardar(sistema, final, usuario, titulo=titulo, idiomas=idiomas or [])
+        return {"ok": True, "filename": final, "sha": sha_juego}
     finally:
         temporal.unlink(missing_ok=True)
 
@@ -166,11 +207,12 @@ def info(sistema: str, nombre: str) -> dict | None:
 
 
 def por_ruta() -> dict[str, dict]:
-    """ruta -> {url, pagina, estado} de los juegos con fuente externa."""
+    """ruta -> {url, pagina, estado, sha_enlace} de los juegos con fuente externa."""
     with _conectar() as con:
-        filas = con.execute("SELECT j.ruta, e.url, e.pagina, e.estado FROM externos e JOIN juegos j ON j.id = e.juego_id "
+        filas = con.execute("SELECT j.ruta, e.url, e.pagina, e.estado, e.sha_enlace FROM externos e JOIN juegos j ON j.id = e.juego_id "
                             "WHERE j.ruta IS NOT NULL").fetchall()
-    return {f["ruta"]: {"url": f["url"], "pagina": f["pagina"], "estado": f["estado"]} for f in filas}
+    return {f["ruta"]: {"url": f["url"], "pagina": f["pagina"], "estado": f["estado"], "sha_enlace": f["sha_enlace"]}
+            for f in filas}
 
 
 # ---------------- comprobación periódica (sin descargar) ----------------

@@ -45,6 +45,7 @@ import ajustes
 import config
 import externos
 import linaje
+import fichas
 import verificacion
 import versiones
 
@@ -308,10 +309,19 @@ def _juego_remoto_valido(j) -> dict | None:
                 anteriores.append([par[0], par[1]])
     codigo = j.get("codigo") if isinstance(j.get("codigo"), str) and len(j["codigo"]) <= 40 \
         and all(c.isalnum() or c in ":-_. " for c in j["codigo"]) else None
+    titulo = fichas.limpiar_titulo(j.get("titulo")) if isinstance(j.get("titulo"), str) else ""
+    titulo = "".join(c for c in titulo if c not in "<>\"\x00") or fichas.titulo_por_defecto(nombre)
+    sha_enlace = j.get("shaEnlace") if isinstance(j.get("shaEnlace"), str) and len(j["shaEnlace"]) == 64 \
+        and set(j["shaEnlace"]) <= _SHA_VALIDO else None
+    motivo = j.get("motivoCorrupto") if isinstance(j.get("motivoCorrupto"), str) else ""
     return {"system": sistema, "filename": nombre, "sizeBytes": tamano, "coverUrl": portada,
+            "titulo": titulo, "idiomas": fichas.limpiar_idiomas(j.get("idiomas") if isinstance(j.get("idiomas"), list) else []),
+            "corrupto": j.get("corrupto") is True,
+            "motivoCorrupto": "".join(c for c in motivo[:300] if c not in "<>\"\x00") if j.get("corrupto") is True else "",
             "esGrupo": bool(j.get("esGrupo")), "tipoGrupo": tipo, "roles": roles, "sha": sha,
             "version": len(anteriores) + 1 if sha else None, "anteriores": anteriores, "codigo": codigo,
             "fuenteExterna": _enlace_remoto(j.get("fuenteExterna")) if sha else None,
+            "shaEnlace": (sha_enlace or sha) if sha else None,
             "paginaAutor": _enlace_remoto(j.get("paginaAutor"))}
 
 
@@ -358,6 +368,7 @@ def juegos_propios(sistema: str | None = None, texto: str | None = None) -> list
     cadenas = versiones.cadenas_propias()
     enlaces = externos.por_ruta()
     verificados = verificacion.todas()
+    datos_fichas = fichas.todas()
     for j in juegos:
         j["sha"] = sha_conocido(j["system"], j["filename"])
         c = cadenas.get(f"{j['system']}/{j['filename']}")
@@ -368,11 +379,14 @@ def juegos_propios(sistema: str | None = None, texto: str | None = None) -> list
         e = enlaces.get(f"{j['system']}/{j['filename']}")
         # Descarga preferente desde la web del autor (ver externos.py).
         j["fuenteExterna"] = e["url"] if e else None
+        # SHA de lo que da el enlace: el del juego, o el del .zip si aquí está descomprimido (RPG Maker).
+        j["shaEnlace"] = (e["sha_enlace"] or j["sha"]) if e else None
         j["paginaAutor"] = (e["pagina"] or None) if e else None
         j["fuenteEstado"] = e["estado"] if e else None   # solo para el gestor (no se exporta)
         v = verificados.get(j["sha"]) if j["sha"] else None
         # No-Intro / Redump (ver verificacion.py), solo para el gestor (no se exporta).
         j["verificacion"] = {k: v[k] for k in ("estado", "fuente", "nombre", "detalle")} if v else None
+        fichas.completar(j, datos_fichas.get(f"{j['system']}/{j['filename']}"), j["verificacion"])
         j["origen"] = None
         j["libreria"] = ajustes.leer("nombre")
         j["editable"] = True
@@ -531,7 +545,8 @@ async def _exigir_ticket(request: Request) -> dict:
 async def catalogo(request: Request):
     await _exigir_ticket(request)
     return [{k: j[k] for k in ("system", "filename", "sizeBytes", "coverUrl", "esGrupo", "tipoGrupo", "roles", "sha",
-                               "version", "anteriores", "codigo", "fuenteExterna", "paginaAutor")}
+                               "version", "anteriores", "codigo", "fuenteExterna", "shaEnlace", "paginaAutor",
+                               "titulo", "idiomas", "corrupto", "motivoCorrupto")}
             for j in juegos_propios()]
 
 

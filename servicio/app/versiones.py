@@ -109,6 +109,8 @@ def olvidar_ruta(ruta_rel: str) -> None:
 
 
 def renombrado(sistema: str, viejo: str, nuevo: str, mover_hash: bool) -> None:
+    import fichas
+    fichas.renombrar(sistema, viejo, nuevo)
     with _conectar() as con:
         con.execute("UPDATE juegos SET ruta = ? WHERE ruta = ?", (f"{sistema}/{nuevo}", f"{sistema}/{viejo}"))
         if mover_hash:

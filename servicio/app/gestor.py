@@ -30,6 +30,7 @@ import ajustes
 import config
 import externos
 import federacion
+import fichas
 import versiones
 import main as nucleo
 
@@ -190,17 +191,59 @@ async def subir_o_editar(request: Request, usuario: str = Usuario):
             await nucleo.cambiar_caratula(I, T, system=sistema, filename=str(form.get("nombre", "")),
                                           cover=_fichero(form, "cover"))
             return _ok()
+        if modo == "ficha":
+            return _ok(_guardar_ficha(form, sistema, usuario))
+        if modo == "enlace":
+            # Juego nuevo solo con un enlace (+ nombre, carátula e idiomas): ver externos.py.
+            return _ok(await externos.anadir_juego(sistema, str(form.get("nombre", "")), str(form.get("url", "")),
+                                                   str(form.get("pagina", "")), usuario,
+                                                   caratula=_fichero(form, "cover", obligatorio=False),
+                                                   idiomas=_idiomas(form), titulo=str(form.get("titulo", ""))))
         if modo == "grupo":
-            return await _subir_grupo(form, sistema)
+            resultado = await _subir_grupo(form, sistema)
+            fichas.guardar(sistema, _nombre_grupo_final(sistema, str(form.get("nombre_juego", "")).strip()), usuario,
+                           titulo=str(form.get("titulo", "")), idiomas=_idiomas(form))
+            return resultado
         if modo == "actualizar":
             return _ok(await versiones.actualizar(sistema, str(form.get("nombre", "")), _fichero(form, "rom"), usuario,
                                                   sin_cabecera_ok=str(form.get("sin_cabecera_ok")) == "1"))
         rom = _fichero(form, "rom")
-        await nucleo.subir_juego(I, T, system=sistema, filename=str(form.get("nombre", "")).strip(), rom=rom,
-                                 cover=_fichero(form, "cover", obligatorio=False))
+        r = await nucleo.subir_juego(I, T, system=sistema, filename=str(form.get("nombre", "")).strip(), rom=rom,
+                                     cover=_fichero(form, "cover", obligatorio=False))
+        fichas.guardar(sistema, r["filename"], usuario, titulo=str(form.get("titulo", "")), idiomas=_idiomas(form))
         return _ok()
     except HTTPException as e:
         return _error(e)
+
+
+def _idiomas(form) -> list[str]:
+    return fichas.limpiar_idiomas(str(form.get("idiomas", "")))
+
+
+def _nombre_grupo_final(sistema: str, nombre_juego: str) -> str:
+    """La carpeta que acaba siendo el juego ("Juego.cue", "Juego.m3u", "Juego.nsp"...)."""
+    carpeta = config.ROOT / nucleo.nombre_seguro(sistema)
+    candidatos = [p.name for p in carpeta.iterdir() if p.is_dir() and Path(p.name).stem == nombre_juego] \
+        if carpeta.is_dir() else []
+    return candidatos[0] if candidatos else nombre_juego
+
+
+def _guardar_ficha(form, sistema: str, usuario: str) -> dict:
+    """Título (para juntar idiomas), idiomas y marca de archivo corrupto de un juego propio."""
+    nombre = nucleo.nombre_seguro(str(form.get("nombre", "")))
+    if not (config.ROOT / nucleo.nombre_seguro(sistema) / nombre).exists():
+        raise HTTPException(404, "Juego no encontrado.")
+    campos = {}
+    if "titulo" in form:
+        campos["titulo"] = str(form.get("titulo", ""))
+    if "idiomas" in form:
+        campos["idiomas"] = _idiomas(form)
+    if "corrupto" in form:
+        valor = str(form.get("corrupto"))
+        campos["corrupto"] = {"1": True, "0": False}.get(valor)       # "auto" -> lo decide la verificación
+        campos["motivo"] = str(form.get("motivo", ""))
+    fichas.guardar(sistema, nombre, usuario, **campos)
+    return {"ok": True}
 
 
 async def _subir_grupo(form, sistema: str):
@@ -240,15 +283,13 @@ def info_externo(request: Request, usuario: str = Usuario):
 @router.post("/api/externo")
 async def externo(request: Request, usuario: str = Usuario):
     """Fuentes externas (ver externos.py): guardar o quitar el enlace de un
-    juego, o crear un juego nuevo desde un enlace."""
+    juego (los juegos nuevos desde un enlace van por POST /api/juegos, modo "enlace")."""
     d = await request.json()
     sistema, nombre = str(d.get("sistema", "")), str(d.get("nombre", ""))
     try:
         if d.get("accion") == "quitar":
             externos.quitar(sistema, nombre)
             return _ok()
-        if d.get("accion") == "nuevo":
-            return _ok(await externos.anadir_juego(sistema, nombre, str(d.get("url", "")), str(d.get("pagina", "")), usuario))
         return _ok(await externos.guardar_enlace(sistema, nombre, str(d.get("url", "")), str(d.get("pagina", "")), usuario,
                                                  sin_cabecera_ok=bool(d.get("sin_cabecera_ok"))))
     except HTTPException as e:
@@ -260,6 +301,7 @@ async def borrar(request: Request, usuario: str = Usuario):
     datos = await request.json()
     try:
         nucleo.borrar_juego(I, T, system=str(datos.get("sistema", "")), filename=str(datos.get("nombre", "")))
+        fichas.borrar(str(datos.get("sistema", "")), str(datos.get("nombre", "")))
         return _ok()
     except HTTPException as e:
         return _error(e)
