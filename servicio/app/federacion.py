@@ -317,6 +317,8 @@ def _juego_remoto_valido(j) -> dict | None:
     return {"system": sistema, "filename": nombre, "sizeBytes": tamano, "coverUrl": portada,
             "titulo": titulo, "idiomas": fichas.limpiar_idiomas(j.get("idiomas") if isinstance(j.get("idiomas"), list) else []),
             "corrupto": j.get("corrupto") is True,
+            # Automático (la verificación sospecha) o comprobado por su administrador; sin el dato, automático.
+            "corruptoAutomatico": j.get("corrupto") is True and j.get("corruptoAutomatico") is not False,
             "motivoCorrupto": "".join(c for c in motivo[:300] if c not in "<>\"\x00") if j.get("corrupto") is True else "",
             "esGrupo": bool(j.get("esGrupo")), "tipoGrupo": tipo, "roles": roles, "sha": sha,
             "version": len(anteriores) + 1 if sha else None, "anteriores": anteriores, "codigo": codigo,
@@ -546,7 +548,7 @@ async def catalogo(request: Request):
     await _exigir_ticket(request)
     return [{k: j[k] for k in ("system", "filename", "sizeBytes", "coverUrl", "esGrupo", "tipoGrupo", "roles", "sha",
                                "version", "anteriores", "codigo", "fuenteExterna", "shaEnlace", "paginaAutor",
-                               "titulo", "idiomas", "corrupto", "motivoCorrupto")}
+                               "titulo", "idiomas", "corrupto", "motivoCorrupto", "corruptoAutomatico")}
             for j in juegos_propios()]
 
 
