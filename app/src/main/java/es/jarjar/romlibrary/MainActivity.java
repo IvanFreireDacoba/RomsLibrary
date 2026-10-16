@@ -1161,6 +1161,7 @@ public class MainActivity extends BaseActivity {
             }
             juego.corrupto = o.optBoolean("corrupto", false);
             juego.corruptoAutomatico = o.optBoolean("corruptoAutomatico", true);
+            juego.descargable = o.optBoolean("descargable", true);
             juego.motivoCorrupto = o.isNull("motivoCorrupto") ? null : o.optString("motivoCorrupto", null);
             lista.add(juego);
         }
@@ -1329,6 +1330,13 @@ public class MainActivity extends BaseActivity {
     private void onAccionInstalarDesinstalar(Juego juego) {
         if (juego.instaladoLocal) {
             eliminarCopiaLocal(juego);
+        } else if (!juego.descargable) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Archivo corrupto")
+                    .setMessage("La librería ha comprobado que «" + juego.nombreFichero + "» es un archivo corrupto y no lo "
+                            + "sirve hasta que suba una versión buena.\n\n" + (juego.motivoCorrupto == null ? "" : juego.motivoCorrupto))
+                    .setPositiveButton("Vale", null)
+                    .show();
         } else if (juego.corrupto) {
             new AlertDialog.Builder(this)
                     .setTitle(juego.corruptoAutomatico ? "Posible archivo corrupto" : "Archivo corrupto")

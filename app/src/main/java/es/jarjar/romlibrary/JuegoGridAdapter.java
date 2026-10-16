@@ -50,7 +50,8 @@ final class JuegoGridAdapter extends ArrayAdapter<Juego> {
                 + (juego.fuenteExterna != null ? " · enlace del autor" : ""),
                 juego.etiquetaIdiomaYEstado()));
 
-        botonInstalar.setText(juego.instaladoLocal ? "Desinstalar" : "Instalar");
+        botonInstalar.setText(juego.instaladoLocal ? "Desinstalar" : juego.descargable ? "Instalar" : "No disponible");
+        botonInstalar.setEnabled(juego.instaladoLocal || juego.descargable);
         botonInstalar.setOnClickListener(v -> listener.onAccionInstalar(juego));
         botonInstalar.setOnLongClickListener(v -> {
             listener.onElegirIdioma(juego);

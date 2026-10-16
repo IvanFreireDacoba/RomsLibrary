@@ -40,6 +40,8 @@ final class Juego {
     boolean corrupto;
     // Solo lo sospecha la verificación (naranja) o lo ha comprobado el administrador (rojo).
     boolean corruptoAutomatico;
+    // Confirmado como corrupto y sin versión limpia: la librería no lo sirve (solo se avisa).
+    boolean descargable = true;
     String motivoCorrupto;
     int confianza;         // de la librería de origen, según el índice (70+ = de confianza)
     boolean instaladoLocal;
@@ -104,7 +106,7 @@ final class Juego {
     /** Orden de preferencia: sin marcar como corrupto primero; luego español, inglés, otro idioma conocido y desconocido. */
     int preferencia() {
         int idioma = idiomas.contains("es") ? 0 : idiomas.contains("en") ? 1 : idiomas.isEmpty() ? 3 : 2;
-        return (corrupto ? 10 : 0) + idioma;
+        return (descargable ? 0 : 20) + (corrupto ? 10 : 0) + idioma;
     }
 
     /** Etiqueta corta tipo "Base+2 Updates+1 DLC" para las tarjetas de la galería, o "" si no aplica. */
