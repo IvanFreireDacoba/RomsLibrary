@@ -45,11 +45,11 @@ final class JuegoAdapter extends ArrayAdapter<Juego> {
                 ? (juego.tamanoBytes / 1024 / 1024) + " MB"
                 : (juego.tamanoBytes / 1024) + " KB";
         String etiquetaRoles = juego.etiquetaRolesSwitch();
-        detalle.setText((juego.instaladoLocal ? "✓ EN EL DISPOSITIVO · " : "") + tamano
+        detalle.setText(android.text.TextUtils.concat((juego.instaladoLocal ? "✓ EN EL DISPOSITIVO · " : "") + tamano
                 + (etiquetaRoles.isEmpty() ? "" : " · " + etiquetaRoles)
                 + (juego.origen != null ? " · de " + juego.libreria + (juego.confianza >= 70 ? " ✔" : "") : "")
-                + (juego.fuenteExterna != null ? " · enlace del autor" : "")
-                + juego.etiquetaIdiomaYEstado());
+                + (juego.fuenteExterna != null ? " · enlace del autor" : ""),
+                juego.etiquetaIdiomaYEstado()));
 
         botonInstalar.setText(juego.instaladoLocal ? "Desinstalar" : "Instalar");
         botonInstalar.setOnClickListener(v -> listener.onAccionInstalar(juego));

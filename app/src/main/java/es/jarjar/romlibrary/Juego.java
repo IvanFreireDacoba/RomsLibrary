@@ -1,5 +1,10 @@
 package es.jarjar.romlibrary;
 
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -33,6 +38,8 @@ final class Juego {
     List<Juego> variantes = new ArrayList<>(); // todas las del mismo título, esta incluida
     // Marcado como archivo corrupto en la librería (a mano o por la verificación): se avisa antes de instalar.
     boolean corrupto;
+    // Solo lo sospecha la verificación (naranja) o lo ha comprobado el administrador (rojo).
+    boolean corruptoAutomatico;
     String motivoCorrupto;
     int confianza;         // de la librería de origen, según el índice (70+ = de confianza)
     boolean instaladoLocal;
@@ -70,19 +77,28 @@ final class Juego {
     }
 
     /** Texto extra para las tarjetas: idioma, otros idiomas disponibles y aviso de archivo corrupto. */
-    String etiquetaIdiomaYEstado() {
-        StringBuilder sb = new StringBuilder();
+    CharSequence etiquetaIdiomaYEstado() {
+        SpannableStringBuilder sb = new SpannableStringBuilder();
         String idioma = etiquetaIdiomas();
         if (!idioma.isEmpty()) {
             sb.append(" · ").append(idioma);
         }
         if (variantes.size() > 1) {
-            sb.append(" (+").append(variantes.size() - 1).append(variantes.size() == 2 ? " idioma" : " idiomas").append(")");
+            sb.append(" (+").append(String.valueOf(variantes.size() - 1)).append(variantes.size() == 2 ? " idioma" : " idiomas").append(")");
         }
         if (corrupto) {
-            sb.append(" · ⚠ ARCHIVO CORRUPTO");
+            sb.append(" · ");
+            int inicio = sb.length();
+            sb.append("⚠ ARCHIVO CORRUPTO");
+            sb.setSpan(new ForegroundColorSpan(colorCorrupto()), inicio, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            sb.setSpan(new StyleSpan(android.graphics.Typeface.BOLD), inicio, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
-        return sb.toString();
+        return sb;
+    }
+
+    /** Naranja si solo lo sospecha la verificación automática; rojo si está comprobado. */
+    int colorCorrupto() {
+        return corruptoAutomatico ? 0xFFFF9F2E : 0xFFFF4D4D;
     }
 
     /** Orden de preferencia: sin marcar como corrupto primero; luego español, inglés, otro idioma conocido y desconocido. */

@@ -1160,6 +1160,7 @@ public class MainActivity extends BaseActivity {
                 }
             }
             juego.corrupto = o.optBoolean("corrupto", false);
+            juego.corruptoAutomatico = o.optBoolean("corruptoAutomatico", true);
             juego.motivoCorrupto = o.isNull("motivoCorrupto") ? null : o.optString("motivoCorrupto", null);
             lista.add(juego);
         }
@@ -1330,8 +1331,11 @@ public class MainActivity extends BaseActivity {
             eliminarCopiaLocal(juego);
         } else if (juego.corrupto) {
             new AlertDialog.Builder(this)
-                    .setTitle("Archivo corrupto")
-                    .setMessage("La librería ha marcado «" + juego.nombreFichero + "» como archivo corrupto: puede no arrancar "
+                    .setTitle(juego.corruptoAutomatico ? "Posible archivo corrupto" : "Archivo corrupto")
+                    .setMessage((juego.corruptoAutomatico
+                            ? "La verificación automática de la librería sospecha que «" + juego.nombreFichero
+                              + "» está corrupto (nadie lo ha comprobado aún): puede no arrancar "
+                            : "La librería ha comprobado que «" + juego.nombreFichero + "» es un archivo corrupto: puede no arrancar ")
                             + "o fallar durante la partida.\n\n" + (juego.motivoCorrupto == null ? "" : juego.motivoCorrupto)
                             + "\n\n¿Instalarlo igualmente?")
                     .setPositiveButton("Instalar igualmente", (d, w) -> solicitarDescarga(juego))
@@ -1391,15 +1395,23 @@ public class MainActivity extends BaseActivity {
             return;
         }
         List<Juego> variantes = juego.variantes;
-        String[] opciones = new String[variantes.size()];
+        CharSequence[] opciones = new CharSequence[variantes.size()];
         for (int i = 0; i < variantes.size(); i++) {
             Juego v = variantes.get(i);
             List<String> nombres = new ArrayList<>();
             for (String codigo : v.idiomas) {
                 nombres.add(NOMBRES_IDIOMA.getOrDefault(codigo, codigo));
             }
-            opciones[i] = (nombres.isEmpty() ? "Idioma sin indicar" : String.join(", ", nombres)) + " — " + v.nombreFichero
-                    + (v.instaladoLocal ? " ✓" : "") + (v.corrupto ? " ⚠ corrupto" : "");
+            android.text.SpannableStringBuilder opcion = new android.text.SpannableStringBuilder(
+                    (nombres.isEmpty() ? "Idioma sin indicar" : String.join(", ", nombres)) + " — " + v.nombreFichero
+                    + (v.instaladoLocal ? " ✓" : ""));
+            if (v.corrupto) {
+                int inicio = opcion.length();
+                opcion.append(" ⚠ corrupto");
+                opcion.setSpan(new android.text.style.ForegroundColorSpan(v.colorCorrupto()), inicio, opcion.length(),
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            opciones[i] = opcion;
         }
         new AlertDialog.Builder(this)
                 .setTitle("Elegir idioma")
