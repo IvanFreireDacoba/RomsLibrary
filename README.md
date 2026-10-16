@@ -4,6 +4,11 @@ Tu propia librería de juegos retro en tu servidor, con una app Android para
 instalarlos en la consola (Retroid, móviles...) y sincronizar las partidas
 entre consolas.
 
+> **Legal:** software de gestión y sincronización; no incluye ROMs ni concede
+> derechos sobre juegos u otros contenidos de terceros. Usa solo ficheros que
+> tengas derecho a obtener, guardar y compartir. Ver [LEGAL.md](LEGAL.md).
+> La licencia MIT cubre solo el código.
+
 Este repositorio es el **servicio** (y su despliegue). La app Android está en
 [RomsLibrary-App](https://github.com/IvanFreireDacoba/RomsLibrary-App); su
 APK se descarga de la sección *Releases* de ese repositorio.
@@ -42,22 +47,32 @@ APK se descarga de la sección *Releases* de ese repositorio.
   de partidas de sund.es, sea cual sea la librería.
 ```
 
-### Librería pública o privada
+### Librería pública o privada, y juegos compartidos
 
-- **Privada** (por defecto): solo ves y ofreces tus juegos, y la app
-  necesita tu clave de acceso.
-- **Pública**: compartes tus juegos con las demás librerías públicas y ves
-  los suyos; la app entra sin clave. Se activa en el gestor (*Ajustes del
-  servicio*) aceptando antes el aviso legal. Tu servicio se da de alta solo
-  en el índice (`https://sund.es`) en cuanto tiene URL pública.
+- **Privada** (por defecto): sin su clave no se ve nada.
+- **Pública**: se da de alta en el índice (`https://sund.es`) y se ve sin
+  clave, pero **solo lo que marques como «Compartido»**. Se activa en el
+  gestor (*Ajustes del servicio*) aceptando antes el aviso legal. Volver a
+  privada se puede siempre y te saca del índice al momento.
+- **Cada juego** es «Solo para mí» o «Compartido», y se elige **siempre al
+  subirlo** (por defecto, «Solo para mí»; se cambia en *Editar*). Compartir
+  exige indicar **por qué se puede compartir**: homebrew o juego propio,
+  licencia libre (cuál), permiso del titular (de quién), fan game original o
+  enlace a la web de su autor. Queda anotado quién y cuándo. Solo lo
+  compartido sale por la API sin clave, por la federación y en las copias
+  entre librerías; lo «Solo para mí» no sale nunca.
+- **Acceso a la librería entera:** con su clave, o desde la app con
+  **«Solicitar acceso»**: la consola manda su nombre e identificador y el
+  gestor enseña la solicitud para **aceptarla o rechazarla**. Cada consola
+  aceptada tiene su propio token (no se reparte la clave) y se le puede
+  quitar el acceso cuando quieras. Da acceso solo a tus consolas: dar a
+  otras personas juegos que no puedes compartir es distribuirlos.
 
-Volver a privada se puede siempre y te saca del índice al momento. La app
-descarga los juegos de otra librería **directamente de ella**: tu servicio
-nunca reenvía juegos ajenos. Los
-juegos de otras librerías **no se pueden editar** desde la tuya: solo
-descargarlos o **copiarlos** a tu librería personal (eligiendo el nombre).
-Si dos librerías tienen el mismo juego (mismo SHA-256), se muestra una sola
-vez.
+La app descarga los juegos de otra librería **directamente de ella**: tu
+servicio nunca reenvía juegos ajenos. Los juegos de otras librerías **no se
+pueden editar** desde la tuya: solo descargarlos o **copiarlos** a tu
+librería (entran como «Solo para mí»). Si dos librerías tienen el mismo
+juego (mismo SHA-256), se muestra una sola vez.
 
 ### Índice de librerías públicas
 
@@ -88,7 +103,7 @@ historial (`versiones.py`); los que ya estaban entraron solos como v1.
   **con el mismo nombre de fichero** y su SHA se añade al historial. Solo se
   acepta si el código de la **cabecera** del ROM (`cabeceras.py`: GB/GBC,
   GBA, N64, GameCube, PS1, PS2, PSP, también dentro de .zip) coincide con el
-  del juego: un Mario nunca entra como versión de Esmeralda. Si el juego tiene
+  del juego: un juego nunca entra como versión de otro distinto. Si el juego tiene
   cabecera, la nueva también tiene que tenerla (no se puede saltar); los
   formatos sin cabecera legible (.chd, .cso, .rvz) piden confirmación.
   Tampoco se aceptan: el SHA de otro juego, la versión actual ni una anterior
@@ -103,7 +118,7 @@ historial (`versiones.py`); los que ya estaban entraron solos como v1.
   pasan las dos a la actual.
 
 Límite conocido: los romhacks conservan el código del juego base (todos los
-hacks de Rojo Fuego son `gba:BPRE`), así que la cabecera no distingue un
+hacks de un mismo juego llevan su código), así que la cabecera no distingue un
 hack de otro sobre la misma base.
 
 ### Verificación de volcados (No-Intro / Redump)
@@ -119,7 +134,7 @@ PS1). En el gestor se ve un distintivo en la tarjeta y el detalle en *Editar*:
 - **✔ verificado**: coincide con un volcado oficial (con su nombre).
 - **⚠ dudoso**: disco con el mismo número de serie y el MISMO tamaño que el
   oficial pero otro contenido: datos alterados (disco dañado o imagen
-  modificada). Suele no arrancar (pasó con Ratchet & Clank 3).
+  modificada). Suele no arrancar.
 - **otro volcado**: mismo número de serie, otro tamaño (otro programa u otro
   corte de pistas, frecuente en PS1): normalmente funciona.
 - **desconocido**: no está en la base (romhacks, traducciones, homebrew).
@@ -286,10 +301,12 @@ variables de entorno están documentadas en `servicio/app/config.py`.
 - RomsLibrary es software para gestionar **tu propia colección**. No incluye
   juegos, BIOS ni firmwares, no enlaza a ellos y no dice dónde conseguirlos.
 - Cada persona es responsable de lo que guarda y comparte con él. Usa solo
-  juegos que tengas derecho a usar y, si tu librería es pública, a distribuir:
-  tus propias copias de seguridad, homebrew o juegos de licencia libre. En
-  muchos países, incluida España, distribuir copias de juegos comerciales sin
-  permiso es ilegal aunque sea gratis.
+  juegos que tengas derecho a usar. Comparte («Compartido», o dando acceso a
+  tu librería) solo lo que tengas derecho a distribuir: homebrew, juegos de
+  licencia libre o con permiso del titular. Una copia de seguridad de tu
+  original es solo para ti y no se puede compartir. En muchos países,
+  incluida España, distribuir copias de juegos comerciales sin permiso es
+  ilegal aunque sea gratis. Ver [LEGAL.md](LEGAL.md).
 - Una librería **pública** enseña su catálogo a todas las demás librerías
   públicas y a cualquiera que use la app sin clave. No la pongas pública si
   tiene juegos que no puedes distribuir; para tu uso personal, déjala privada.
