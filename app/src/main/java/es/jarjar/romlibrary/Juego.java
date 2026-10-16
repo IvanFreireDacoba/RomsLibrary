@@ -1,5 +1,8 @@
 package es.jarjar.romlibrary;
 
+import java.util.ArrayList;
+import java.util.List;
+
 final class Juego {
     final String sistema;
     final String nombreFichero;
@@ -21,6 +24,16 @@ final class Juego {
     // Juego que su autor publica en su web (traducciones...): se descarga de
     // ahí (cuenta para sus estadísticas) y, si falla o no coincide el SHA, de la librería.
     String fuenteExterna;
+    String shaEnlace;      // SHA de lo que da ese enlace (el del juego, o el del .zip en RPG Maker)
+    // Versiones del mismo juego en distintos idiomas: comparten título y la
+    // librería las manda por separado (cada una con sus propias versiones).
+    // En la lista se ve una sola entrada (ver MainActivity.agruparIdiomas).
+    String titulo;
+    List<String> idiomas = new ArrayList<>();
+    List<Juego> variantes = new ArrayList<>(); // todas las del mismo título, esta incluida
+    // Marcado como archivo corrupto en la librería (a mano o por la verificación): se avisa antes de instalar.
+    boolean corrupto;
+    String motivoCorrupto;
     int confianza;         // de la librería de origen, según el índice (70+ = de confianza)
     boolean instaladoLocal;
     boolean descargando; // estado de UI puro (no viene del servidor): sustituye el botón por una barra de progreso.
@@ -49,6 +62,33 @@ final class Juego {
     /** Nuestra clave de acceso solo viaja a nuestro servidor, nunca a otras librerías. */
     String clave(String nuestra) {
         return origenUrl != null ? null : nuestra;
+    }
+
+    /** "ES", "EN FR"... ("" si la librería no lo sabe). */
+    String etiquetaIdiomas() {
+        return String.join(" ", idiomas).toUpperCase();
+    }
+
+    /** Texto extra para las tarjetas: idioma, otros idiomas disponibles y aviso de archivo corrupto. */
+    String etiquetaIdiomaYEstado() {
+        StringBuilder sb = new StringBuilder();
+        String idioma = etiquetaIdiomas();
+        if (!idioma.isEmpty()) {
+            sb.append(" · ").append(idioma);
+        }
+        if (variantes.size() > 1) {
+            sb.append(" (+").append(variantes.size() - 1).append(variantes.size() == 2 ? " idioma" : " idiomas").append(")");
+        }
+        if (corrupto) {
+            sb.append(" · ⚠ ARCHIVO CORRUPTO");
+        }
+        return sb.toString();
+    }
+
+    /** Orden de preferencia: sin marcar como corrupto primero; luego español, inglés, otro idioma conocido y desconocido. */
+    int preferencia() {
+        int idioma = idiomas.contains("es") ? 0 : idiomas.contains("en") ? 1 : idiomas.isEmpty() ? 3 : 2;
+        return (corrupto ? 10 : 0) + idioma;
     }
 
     /** Etiqueta corta tipo "Base+2 Updates+1 DLC" para las tarjetas de la galería, o "" si no aplica. */

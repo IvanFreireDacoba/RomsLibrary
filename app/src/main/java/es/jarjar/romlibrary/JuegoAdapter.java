@@ -51,10 +51,15 @@ final class JuegoAdapter extends ArrayAdapter<Juego> {
         detalle.setText((juego.instaladoLocal ? "✓ EN EL DISPOSITIVO · " : "") + tamano
                 + (etiquetaRoles.isEmpty() ? "" : " · " + etiquetaRoles)
                 + (juego.origen != null ? " · de " + juego.libreria + (juego.confianza >= 70 ? " ✔" : "") : "")
-                + (juego.fuenteExterna != null ? " · enlace del autor" : ""));
+                + (juego.fuenteExterna != null ? " · enlace del autor" : "")
+                + juego.etiquetaIdiomaYEstado());
 
         botonInstalar.setText(juego.instaladoLocal ? "Desinstalar" : "Instalar");
         botonInstalar.setOnClickListener(v -> listener.onAccionInstalar(juego));
+        botonInstalar.setOnLongClickListener(v -> {
+            listener.onElegirIdioma(juego);
+            return true;
+        });
         botonInstalar.setOnKeyListener((v, keyCode, event) -> navegar1D((ListView) parent, position, keyCode, event));
         // SOLO DEPURACIÓN TEMPORAL -- ver FocusDebugLogger, quitar tras el diagnóstico.
         final int posLog = position;

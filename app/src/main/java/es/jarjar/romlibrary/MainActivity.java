@@ -1079,8 +1079,9 @@ public class MainActivity extends BaseActivity {
         textoEstado.setText("Cargando...");
         new Thread(() -> {
             try {
-                List<Juego> lista = parsearJuegos(ApiClient.getTexto(baseUrl, token, ruta));
-                marcarInstaladosLocalmente(lista);
+                List<Juego> todas = parsearJuegos(ApiClient.getTexto(baseUrl, token, ruta));
+                marcarInstaladosLocalmente(todas);
+                List<Juego> lista = agruparIdiomas(todas);
                 runOnUiThread(() -> {
                     juegos = lista;
                     aplicarFiltrosYActualizarAdaptadores();
@@ -1115,8 +1116,8 @@ public class MainActivity extends BaseActivity {
     private void aplicarFiltrosYActualizarAdaptadores() {
         List<Juego> visibles = aplicarFiltroInstalado(juegos);
         textoEstado.setText(visibles.isEmpty() ? "Sin juegos" : visibles.size() + " juego(s)");
-        adapter = new JuegoAdapter(this, visibles, baseUrl, token, this::onAccionInstalarDesinstalar);
-        adapterGrid = new JuegoGridAdapter(this, visibles, baseUrl, token, this::onAccionInstalarDesinstalar);
+        adapter = new JuegoAdapter(this, visibles, baseUrl, token, accionesJuego);
+        adapterGrid = new JuegoGridAdapter(this, visibles, baseUrl, token, accionesJuego);
         listaJuegos.setAdapter(adapter);
         cuadriculaJuegos.setAdapter(adapterGrid);
         aplicarVistaSeleccionada();
@@ -1173,7 +1174,19 @@ public class MainActivity extends BaseActivity {
             juego.sha = sha.matches("[0-9a-f]{64}") ? sha : null;
             String externa = o.isNull("fuenteExterna") ? "" : o.optString("fuenteExterna", "");
             juego.fuenteExterna = externa.startsWith("https://") && !externa.contains("@") && juego.sha != null ? externa : null;
+            String shaEnlace = o.optString("shaEnlace", "");
+            juego.shaEnlace = shaEnlace.matches("[0-9a-f]{64}") ? shaEnlace : juego.sha;
             juego.confianza = o.optInt("confianza", 0);
+            juego.titulo = o.isNull("titulo") ? null : o.optString("titulo", null);
+            JSONArray idiomas = o.optJSONArray("idiomas");
+            for (int k = 0; idiomas != null && k < idiomas.length(); k++) {
+                String idioma = idiomas.optString(k, "");
+                if (idioma.matches("[a-z]{2}")) {
+                    juego.idiomas.add(idioma);
+                }
+            }
+            juego.corrupto = o.optBoolean("corrupto", false);
+            juego.motivoCorrupto = o.isNull("motivoCorrupto") ? null : o.optString("motivoCorrupto", null);
             lista.add(juego);
         }
         return lista;
@@ -1314,12 +1327,115 @@ public class MainActivity extends BaseActivity {
 
     // ---------- Botón instalar/desinstalar de la tarjeta ----------
 
+    private final AccionInstalarListener accionesJuego = new AccionInstalarListener() {
+        @Override
+        public void onAccionInstalar(Juego juego) {
+            onAccionInstalarDesinstalar(juego);
+        }
+
+        @Override
+        public void onElegirIdioma(Juego juego) {
+            elegirIdioma(juego);
+        }
+    };
+
     private void onAccionInstalarDesinstalar(Juego juego) {
         if (juego.instaladoLocal) {
             eliminarCopiaLocal(juego);
+        } else if (juego.corrupto) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Archivo corrupto")
+                    .setMessage("La librería ha marcado «" + juego.nombreFichero + "» como archivo corrupto: puede no arrancar "
+                            + "o fallar durante la partida.\n\n" + (juego.motivoCorrupto == null ? "" : juego.motivoCorrupto)
+                            + "\n\n¿Instalarlo igualmente?")
+                    .setPositiveButton("Instalar igualmente", (d, w) -> solicitarDescarga(juego))
+                    .setNegativeButton("Cancelar", null)
+                    .show();
         } else {
             solicitarDescarga(juego);
         }
+    }
+
+    /**
+     * Versiones del mismo juego en varios idiomas (mismo título y misma
+     * librería): se ve una sola entrada. Si alguna está instalada, esa (para
+     * poder desinstalarla); si no, la preferida: española, si no inglesa (ver
+     * Juego.preferencia). Las demás se eligen con una pulsación larga.
+     */
+    private static List<Juego> agruparIdiomas(List<Juego> lista) {
+        Map<String, List<Juego>> grupos = new java.util.LinkedHashMap<>();
+        for (Juego j : lista) {
+            String clave = (j.origen == null ? "" : j.origen) + "\n" + j.sistema + "\n"
+                    + (j.titulo == null || j.titulo.isEmpty() ? "\u0000" + j.nombreFichero : j.titulo.toLowerCase());
+            grupos.computeIfAbsent(clave, k -> new ArrayList<>()).add(j);
+        }
+        List<Juego> resultado = new ArrayList<>();
+        for (List<Juego> variantes : grupos.values()) {
+            variantes.sort((a, b) -> Integer.compare(a.preferencia(), b.preferencia()));
+            Juego elegido = variantes.get(0);
+            for (Juego v : variantes) {
+                if (v.instaladoLocal || v.descargando || v.enCola) {
+                    elegido = v;
+                    break;
+                }
+            }
+            for (Juego v : variantes) {
+                v.variantes = variantes;
+            }
+            resultado.add(elegido);
+        }
+        return resultado;
+    }
+
+    private static final Map<String, String> NOMBRES_IDIOMA = new HashMap<>();
+
+    static {
+        String[] pares = {"es", "Español", "en", "Inglés", "ja", "Japonés", "fr", "Francés", "de", "Alemán",
+                "it", "Italiano", "pt", "Portugués"};
+        for (int i = 0; i < pares.length; i += 2) {
+            NOMBRES_IDIOMA.put(pares[i], pares[i + 1]);
+        }
+    }
+
+    /** Pulsación larga en Instalar: lista de idiomas disponibles de ese juego. */
+    private void elegirIdioma(Juego juego) {
+        if (juego.variantes.size() < 2) {
+            Toast.makeText(this, juego.idiomas.isEmpty() ? "Este juego solo está en un idioma"
+                    : "Este juego solo está en " + juego.etiquetaIdiomas(), Toast.LENGTH_SHORT).show();
+            return;
+        }
+        List<Juego> variantes = juego.variantes;
+        String[] opciones = new String[variantes.size()];
+        for (int i = 0; i < variantes.size(); i++) {
+            Juego v = variantes.get(i);
+            List<String> nombres = new ArrayList<>();
+            for (String codigo : v.idiomas) {
+                nombres.add(NOMBRES_IDIOMA.getOrDefault(codigo, codigo));
+            }
+            opciones[i] = (nombres.isEmpty() ? "Idioma sin indicar" : String.join(", ", nombres)) + " — " + v.nombreFichero
+                    + (v.instaladoLocal ? " ✓" : "") + (v.corrupto ? " ⚠ corrupto" : "");
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Elegir idioma")
+                .setItems(opciones, (d, i) -> {
+                    Juego v = variantes.get(i);
+                    if (!v.instaladoLocal) {
+                        onAccionInstalarDesinstalar(v);
+                        juegos = agruparIdiomasConElegido(v);
+                        aplicarFiltrosYActualizarAdaptadores();
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    /** La lista visible, con `elegido` en lugar de la variante que se veía de su juego. */
+    private List<Juego> agruparIdiomasConElegido(Juego elegido) {
+        List<Juego> resultado = new ArrayList<>();
+        for (Juego j : juegos) {
+            resultado.add(j.variantes == elegido.variantes ? elegido : j);
+        }
+        return resultado;
     }
 
     /**
@@ -1573,14 +1689,18 @@ public class MainActivity extends BaseActivity {
      * enlace no responde) devuelve false y se descarga de la librería.
      */
     private boolean descargarDeFuenteExterna(Juego juego, DocumentFile destino) {
-        if (juego.fuenteExterna == null || juego.sha == null) {
+        return descargarDeFuenteExterna(juego, destino.getUri());
+    }
+
+    private boolean descargarDeFuenteExterna(Juego juego, Uri destino) {
+        if (juego.fuenteExterna == null || juego.shaEnlace == null) {
             return false;
         }
         try {
             ApiClient.descargarConReintentos("", null, juego.fuenteExterna,
-                    anadir -> getContentResolver().openOutputStream(destino.getUri(), anadir ? "wa" : "wt"),
+                    anadir -> getContentResolver().openOutputStream(destino, anadir ? "wa" : "wt"),
                     crearCallbackProgreso(juego));
-            if (juego.sha.equals(ActualizadorRoms.sha(this, destino.getUri()))) {
+            if (juego.shaEnlace.equals(ActualizadorRoms.sha(this, destino))) {
                 return true;
             }
             GuardadosSync.log("enlace del autor de " + juego.nombreFichero + ": el SHA no coincide, se baja de la librería");
@@ -1734,10 +1854,14 @@ public class MainActivity extends BaseActivity {
                 }
                 File zipTemporal = File.createTempFile("juego_rpgmaker", ".zip", getCacheDir());
                 try {
-                    ApiClient.descargarConReintentos(juego.base(baseUrl), juego.clave(token),
-                            RUTA_API + "?accion=descargar&system=" + juego.sistema + "&filename=" + Uri.encode(juego.nombreFichero),
-                            anadir -> new FileOutputStream(zipTemporal, anadir),
-                            crearCallbackProgreso(juego));
+                    // El .zip del autor (si lo tiene y coincide) o el que genera la librería.
+                    if (!descargarDeFuenteExterna(juego, Uri.fromFile(zipTemporal))) {
+                        ApiClient.descargarConReintentos(juego.base(baseUrl), juego.clave(token),
+                                RUTA_API + "?accion=descargar&system=" + juego.sistema + "&filename=" + Uri.encode(juego.nombreFichero),
+                                anadir -> new FileOutputStream(zipTemporal, anadir),
+                                crearCallbackProgreso(juego));
+                    }
+                    String raizCanonica = carpetaJuego.getCanonicalPath() + File.separator;
                     // Con java.io.File normal, a diferencia de SAF/DocumentFile,
                     // File.mkdirs() ya crea cualquier profundidad de subcarpetas
                     // de una vez -- no hace falta el caché recursivo tipo
@@ -1750,6 +1874,10 @@ public class MainActivity extends BaseActivity {
                                 continue;
                             }
                             File destinoEntrada = new File(carpetaJuego, entrada.getName());
+                            // Ninguna entrada puede salir de la carpeta del juego (zip-slip).
+                            if (!destinoEntrada.getCanonicalPath().startsWith(raizCanonica)) {
+                                throw new IllegalStateException("Zip con una ruta insegura: " + entrada.getName());
+                            }
                             File carpetaPadre = destinoEntrada.getParentFile();
                             if (carpetaPadre != null && !carpetaPadre.isDirectory() && !carpetaPadre.mkdirs()) {
                                 throw new IllegalStateException("No se pudo crear " + carpetaPadre);
