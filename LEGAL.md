@@ -25,7 +25,11 @@ sincronizar sus partidas guardadas entre dispositivos.
   siempre al subirlo; por defecto, «Solo para mí». Compartir exige declarar
   por qué se puede compartir: homebrew o juego propio, licencia libre (cuál),
   permiso del titular (de quién), fan game original o enlace a la web de su
-  autor. Esa declaración queda registrada con quién y cuándo.
+  autor. Si el contenido coincide con un juego publicado (bases No-Intro y
+  Redump), el gestor lo avisa y pide confirmar expresamente que tienes derecho
+  a distribuirlo; nunca lo impide. Ni la declaración ni la confirmación se
+  asocian a una persona: la decisión, y su responsabilidad, son de quien
+  comparte.
 - Si una librería es **pública**, cualquiera ve y descarga **solo sus juegos
   compartidos**, y solo esos se comparten con otras librerías públicas. Los
   juegos «Solo para mí» no salen nunca de la librería.
