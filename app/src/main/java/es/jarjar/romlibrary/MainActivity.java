@@ -55,11 +55,11 @@ import java.util.zip.ZipInputStream;
  * todos los sistemas, igual que en la web) -- sin ningún paso intermedio de
  * "elegir sistema".
  *
- * La app SOLO habla con el dominio público de SunD (nunca con jarjar
- * directo) a través de /APIs/RomLibraryApp -- ese endpoint PHP en Contabo es
- * quien llama a jarjar por Tailscale server-to-server. Así Tailscale queda
- * limitado a Contabo<->jarjar y la app funciona desde cualquier conexión a
- * internet normal, sin Tailscale en el propio dispositivo.
+ * La app habla con la librería configurada (Cuenta: URL + clave o acceso
+ * concedido, ver AccesoLibreria) por /APIs/RomLibraryApp, con las otras
+ * librerías públicas directamente, y con el servicio de partidas de sund.es
+ * (Partidas). Sin acceso, una librería pública enseña solo sus juegos
+ * compartidos.
  */
 public class MainActivity extends BaseActivity {
 
@@ -374,7 +374,11 @@ public class MainActivity extends BaseActivity {
             campoNombre.setText(Partidas.nombre(this));
         }
         TextView ayuda = new TextView(this);
-        ayuda.setText("El nombre y el identificador de la consola los verán las consolas con las que sincronices partidas.");
+        ayuda.setText("El nombre y el identificador de la consola los verán las consolas con las que sincronices partidas.\n\n"
+                + "Sin clave ves solo los juegos que la librería comparte. Para ver la librería entera, pon su clave o "
+                + "pulsa «Solicitar acceso»: su administrador lo aceptará o lo rechazará."
+                + (AccesoLibreria.pendiente(this, cuenta.url) ? "\n\nYa hay una solicitud de acceso pendiente para esta librería." : "")
+                + "\n\nInstala solo juegos que tengas derecho a usar. Aviso legal: sund.es/romslibrary/aviso-legal");
         formulario.addView(campoUrl);
         formulario.addView(campoClave);
         formulario.addView(campoNombre);
@@ -385,8 +389,48 @@ public class MainActivity extends BaseActivity {
                 .setCancelable(!primeraVez)
                 .setPositiveButton("Guardar", null)
                 .setNegativeButton(primeraVez ? "Más tarde" : "Cancelar", null)
+                .setNeutralButton("Solicitar acceso", null)
                 .create();
-        dialogo.setOnShowListener(d -> dialogo.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+        View.OnClickListener alSolicitarAcceso = v -> {
+            String url = campoUrl.getText().toString();
+            String nombre = campoNombre.getText().toString().trim();
+            if (Cuenta.normalizarUrl(url).isEmpty() || nombre.isEmpty()) {
+                Toast.makeText(this, "Escribe la dirección de la librería y el nombre de la consola", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            v.setEnabled(false);
+            Context contextoApp = getApplicationContext();
+            new Thread(() -> {
+                try {
+                    if (!Partidas.registrada(contextoApp)) {
+                        Partidas.registrar(contextoApp, nombre);
+                    }
+                    AccesoLibreria.solicitar(contextoApp, url, nombre);
+                    runOnUiThread(() -> {
+                        cuenta = Cuenta.cargar(contextoApp);
+                        baseUrl = cuenta.url;
+                        token = cuenta.clave;
+                        actualizarSubtitulo();
+                        dialogo.dismiss();
+                        new AlertDialog.Builder(this)
+                                .setTitle("Solicitud enviada")
+                                .setMessage("El administrador de la librería verá esta consola («" + nombre + "») en su gestor. "
+                                        + "Cuando la acepte, esta consola verá la librería entera (lo comprobará al volver a abrir la app).")
+                                .setPositiveButton("Vale", null)
+                                .show();
+                        cargarJuegos();
+                    });
+                } catch (Exception e) {
+                    runOnUiThread(() -> {
+                        v.setEnabled(true);
+                        Toast.makeText(this, "No se pudo enviar: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    });
+                }
+            }).start();
+        };
+        dialogo.setOnShowListener(d -> {
+            dialogo.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(alSolicitarAcceso);
+            dialogo.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String url = campoUrl.getText().toString();
             String clave = campoClave.getText().toString().trim();
             String nombre = campoNombre.getText().toString().trim();
@@ -421,7 +465,8 @@ public class MainActivity extends BaseActivity {
                     });
                 }
             }).start();
-        }));
+        });
+        });
         dialogo.show();
     }
 
@@ -465,6 +510,27 @@ public class MainActivity extends BaseActivity {
             } catch (Exception ignored) {
                 // Sin conexión o servidor antiguo: se volverá a mirar al volver a la app.
             }
+        }).start();
+    }
+
+    /** Si esta consola pidió acceso a la librería, mira si ya se lo han dado (ver AccesoLibreria). */
+    private void comprobarAccesoLibreria() {
+        Context contextoApp = getApplicationContext();
+        new Thread(() -> {
+            String r = AccesoLibreria.comprobar(contextoApp);
+            if (r == null) {
+                return;
+            }
+            runOnUiThread(() -> {
+                cuenta = Cuenta.cargar(contextoApp);
+                baseUrl = cuenta.url;
+                token = cuenta.clave;
+                Toast.makeText(this, r.equals("aceptada") ? "Acceso concedido: ya ves la librería entera"
+                        : "La librería no ha aceptado la solicitud de acceso", Toast.LENGTH_LONG).show();
+                if (r.equals("aceptada")) {
+                    cargarJuegos();
+                }
+            });
         }).start();
     }
 
@@ -1190,6 +1256,7 @@ public class MainActivity extends BaseActivity {
         actualizarSubtitulo();
         sincronizarGuardadosEnSegundoPlano();
         comprobarSolicitudesPendientes();
+        comprobarAccesoLibreria();
         completarIconosEsDeEnSegundoPlano();
         actualizarRomsEnSegundoPlano();
     }
@@ -1287,7 +1354,7 @@ public class MainActivity extends BaseActivity {
             DocumentFile carpetaSistema = carpetasPorSistema.computeIfAbsent(juego.sistema, raiz::findFile);
             DocumentFile local = carpetaSistema != null ? carpetaSistema.findFile(juego.nombreFichero) : null;
             // Un fichero de 0 bytes es una descarga que falló a medias (pasó
-            // con Zelda Minish Cap): cuenta como NO instalado, para que el
+            // de verdad): cuenta como NO instalado, para que el
             // botón ofrezca volver a descargarlo (descargar() ya borra el
             // existente antes de crear el nuevo).
             juego.instaladoLocal = local != null && (local.isDirectory() || local.length() > 0);

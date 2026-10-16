@@ -140,8 +140,8 @@ public final class ApiClient {
                 throw new IOException("Descarga incompleta: se esperaban " + total + " bytes, se recibieron " + acumulado);
             }
             // Sin Content-Length la comprobación de arriba no salta: un 200
-            // con cuerpo vacío dejaba un ROM de 0 bytes "instalado" (Zelda
-            // Minish Cap). Ningún ROM ni guardado real pesa 0 bytes.
+            // con cuerpo vacío dejaba un ROM de 0 bytes "instalado" (pasó de
+            // verdad). Ningún ROM ni guardado real pesa 0 bytes.
             if (acumulado == 0) {
                 throw new IOException("Descarga vacía: el servidor no envió ningún byte");
             }

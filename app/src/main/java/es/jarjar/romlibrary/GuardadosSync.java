@@ -273,8 +273,8 @@ final class GuardadosSync {
      * .state.auto...) de cualquier core, más los que solo están en el
      * servidor. Nombre en el servidor: "<saves|states>__<core>__<fichero>",
      * así se sabe en qué carpeta va al bajarlo aunque ese core ni exista aún.
-     * Se busca "<rom>." exacto: "Super Mario Advance" no se lleva los de
-     * "Super Mario Advance 2".
+     * Se busca "<rom>." exacto: "Mi Juego" no se lleva los de
+     * "Mi Juego 2".
      */
     private static List<Entrada> entradasRetroArch(String sistema, String stem, Map<String, Double> remotos) {
         List<Entrada> lista = new ArrayList<>();

@@ -53,6 +53,11 @@ final class Cuenta {
         return u;
     }
 
+    /** Guarda librería y clave sin comprobar (p. ej. al pedir acceso, o al recibirlo). */
+    static void guardar(Context context, String url, String clave) {
+        prefs(context).edit().putString(PREF_URL, normalizarUrl(url)).putString(PREF_CLAVE, clave).apply();
+    }
+
     /**
      * Cambia de librería, comprobando antes que responde y que acepta la
      * clave. Bloqueante: llamar desde un hilo de fondo.
