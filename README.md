@@ -5,6 +5,11 @@ App para consolas Android (Retroid, móviles…) que se conecta a una librería
 instala los juegos en la consola (lista para ES-DE), y sincroniza las partidas
 entre tus consolas.
 
+> **Legal:** software de gestión y sincronización; no incluye ROMs ni concede
+> derechos sobre juegos u otros contenidos de terceros. Usa solo ficheros que
+> tengas derecho a obtener, guardar y compartir. Ver [LEGAL.md](LEGAL.md).
+> La licencia MIT cubre solo el código.
+
 ## Descargar
 
 La APK está en **[Releases](https://github.com/IvanFreireDacoba/RomsLibrary-App/releases/latest)**.
@@ -17,9 +22,12 @@ Una vez instalada se actualiza sola.
 2. Elige la carpeta de ROMs (la misma que usa ES-DE) y concede el acceso a
    todos los archivos.
 3. En *Configura RomsLibrary*:
-   - **Servidor:** viene `https://sund.es` (librería pública, sin clave).
-     Puedes poner cualquier otra librería RomsLibrary.
-   - **Clave de acceso:** solo para librerías privadas (se ve en su gestor web).
+   - **Servidor:** viene `https://sund.es`. Puedes poner cualquier otra
+     librería RomsLibrary.
+   - **Clave de acceso:** sin clave ves solo los juegos que la librería
+     comparte (si es pública). Para verla entera, pon su clave o pulsa
+     **Solicitar acceso**: su administrador acepta o rechaza esta consola
+     desde su gestor, y al aceptarla la app la ve entera sin clave.
    - **Nombre de la consola:** con él y su identificador `XXXXX-XXXXX` la
      reconocerán las consolas con las que sincronices partidas.
 
@@ -72,10 +80,12 @@ Las APK firmadas con otra clave no se instalan encima de la oficial.
 - RomsLibrary es software para gestionar **tu propia colección**. No incluye
   juegos, BIOS ni firmwares, no enlaza a ellos y no dice dónde conseguirlos.
 - Cada persona es responsable de lo que guarda y comparte con él. Usa solo
-  juegos que tengas derecho a usar y, si tu librería es pública, a distribuir:
-  tus propias copias de seguridad, homebrew o juegos de licencia libre. En
-  muchos países, incluida España, distribuir copias de juegos comerciales sin
-  permiso es ilegal aunque sea gratis.
+  juegos que tengas derecho a usar. Comparte («Compartido», o dando acceso a
+  tu librería) solo lo que tengas derecho a distribuir: homebrew, juegos de
+  licencia libre o con permiso del titular. Una copia de seguridad de tu
+  original es solo para ti y no se puede compartir. En muchos países,
+  incluida España, distribuir copias de juegos comerciales sin permiso es
+  ilegal aunque sea gratis. Ver [LEGAL.md](LEGAL.md).
 - La app solo descarga lo que ofrece la librería a la que la conectes, o las
   otras librerías públicas que esta te enseñe (en ese caso, directamente de
   ellas). Quien gestiona cada librería es responsable de su contenido.
