@@ -44,6 +44,7 @@ class Juego:
     titulo: str = ""
     idiomas: list[str] = field(default_factory=list)
     corrupto: bool = False
+    corrupto_automatico: bool = True     # solo lo sospecha la verificación (naranja) o comprobado (rojo)
     motivo_corrupto: str = ""
     version: int | None = None
     # Estado local
@@ -112,6 +113,7 @@ def parsear(datos, base: str, sistemas_validos: list[str]) -> list[Juego]:
         j.titulo = str(o.get("titulo") or "")[:120]
         j.idiomas = [i for i in (o.get("idiomas") or []) if isinstance(i, str) and re.fullmatch(r"[a-z]{2}", i)]
         j.corrupto = o.get("corrupto") is True
+        j.corrupto_automatico = o.get("corruptoAutomatico") is not False
         j.motivo_corrupto = str(o.get("motivoCorrupto") or "")[:300]
         j.version = o.get("version") if isinstance(o.get("version"), int) else None
         lista.append(j)

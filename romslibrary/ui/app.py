@@ -195,8 +195,11 @@ class App:
                                            "sus partidas al servidor.", "Desinstalar",
                                            lambda: self._en_hilo(self._desinstalar, j)))
         elif j.corrupto:
-            self.dialogos.append(Confirmar("Archivo corrupto", f"La librería ha marcado «{j.fichero}» como archivo "
-                                           f"corrupto: puede no arrancar o fallar en la partida.\n\n{j.motivo_corrupto}",
+            texto = (f"La verificación automática de la librería sospecha que «{j.fichero}» está corrupto (nadie lo "
+                     "ha comprobado aún)" if j.corrupto_automatico else
+                     f"La librería ha comprobado que «{j.fichero}» es un archivo corrupto")
+            self.dialogos.append(Confirmar("Posible archivo corrupto" if j.corrupto_automatico else "Archivo corrupto",
+                                           f"{texto}: puede no arrancar o fallar en la partida.\n\n{j.motivo_corrupto}",
                                            "Instalar igualmente", lambda: self.encolar(j)))
         else:
             self.encolar(j)
@@ -541,7 +544,8 @@ class App:
         elif j.error:
             tema.texto(sup, "Error: " + j.error, (x, y3), 18, tema.ERROR, ancho_max=ancho)
         elif j.corrupto:
-            tema.texto(sup, "⚠ ARCHIVO CORRUPTO", (x, y3), 18, tema.ERROR, negrita=True)
+            tema.texto(sup, "⚠ ARCHIVO CORRUPTO", (x, y3), 18,
+                       tema.CORRUPTO_AUTOMATICO if j.corrupto_automatico else tema.CORRUPTO, negrita=True)
         elif j.instalado:
             tema.texto(sup, "✓ En la consola", (x, y3), 18, tema.ACENTO)
 

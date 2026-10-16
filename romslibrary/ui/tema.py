@@ -14,6 +14,9 @@ SUAVE = (150, 166, 158)
 ACENTO = (123, 255, 176)
 AVISO = (255, 179, 107)
 ERROR = (255, 120, 120)
+# Archivo corrupto: naranja si solo lo sospecha la verificación automática, rojo si está comprobado.
+CORRUPTO_AUTOMATICO = (255, 159, 46)
+CORRUPTO = (255, 77, 77)
 BARRA = (79, 169, 255)
 
 _FUENTES = [Path(__file__).resolve().parent.parent / "recursos" / "DejaVuSans.ttf",
