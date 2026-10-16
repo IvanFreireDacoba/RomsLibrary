@@ -120,7 +120,9 @@ async def _ciclo_vida(_app):
     import asyncio
     import externos
     import federacion
+    import verificacion
     federacion.arrancar_hilo_hashes()
+    verificacion.arrancar_hilo()
     tarea_externos = asyncio.create_task(externos.bucle())
 
     async def alta_periodica():
@@ -1243,11 +1245,13 @@ import api_app  # noqa: E402
 import federacion  # noqa: E402
 import gestor  # noqa: E402
 import externos  # noqa: E402
+import verificacion  # noqa: E402
 import versiones  # noqa: E402
 
 federacion.inicializar()
 versiones.inicializar()
 externos.inicializar()
+verificacion.inicializar()
 app.include_router(api_app.router)
 app.include_router(federacion.router)
 app.include_router(gestor.router)

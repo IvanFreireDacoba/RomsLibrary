@@ -45,6 +45,7 @@ import ajustes
 import config
 import externos
 import linaje
+import verificacion
 import versiones
 
 router = APIRouter(prefix="/federacion")
@@ -356,6 +357,7 @@ def juegos_propios(sistema: str | None = None, texto: str | None = None) -> list
     juegos = nucleo.listar_juegos_galeria(nucleo.PETICION_INTERNA, nucleo.TOKEN_SISTEMA, system=sistema, q=texto)
     cadenas = versiones.cadenas_propias()
     enlaces = externos.por_ruta()
+    verificados = verificacion.todas()
     for j in juegos:
         j["sha"] = sha_conocido(j["system"], j["filename"])
         c = cadenas.get(f"{j['system']}/{j['filename']}")
@@ -368,6 +370,9 @@ def juegos_propios(sistema: str | None = None, texto: str | None = None) -> list
         j["fuenteExterna"] = e["url"] if e else None
         j["paginaAutor"] = (e["pagina"] or None) if e else None
         j["fuenteEstado"] = e["estado"] if e else None   # solo para el gestor (no se exporta)
+        v = verificados.get(j["sha"]) if j["sha"] else None
+        # No-Intro / Redump (ver verificacion.py), solo para el gestor (no se exporta).
+        j["verificacion"] = {k: v[k] for k in ("estado", "fuente", "nombre", "detalle")} if v else None
         j["origen"] = None
         j["libreria"] = ajustes.leer("nombre")
         j["editable"] = True

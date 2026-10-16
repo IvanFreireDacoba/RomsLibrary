@@ -1292,6 +1292,8 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                         (ajeno ? '<span class="rl-card-lib" title="Juego de otra librería pública">' + rlEscapar(juego.libreria) + '</span>' : '') +
                         (juego.version > 1 ? '<span class="rl-card-lib" title="Versión actual (ver Editar)">v' + (+juego.version) + '</span>' : '') +
                         (juego.fuenteExterna ? '<span class="rl-card-lib" title="Se descarga desde la web del autor">' + (juego.fuenteEstado === 'cambiado' ? '⚠ enlace cambiado' : juego.fuenteEstado === 'caido' ? '⚠ enlace caído' : 'enlace del autor') + '</span>' : '') +
+                        (juego.verificacion && juego.verificacion.estado === 'verificado' ? '<span class="rl-card-lib" title="' + rlEscapar(juego.verificacion.nombre) + '">✔ ' + rlEscapar(juego.verificacion.fuente) + '</span>' : '') +
+                        (juego.verificacion && juego.verificacion.estado === 'dudoso' ? '<span class="rl-card-lib" style="color:#ffb36b" title="' + rlEscapar(juego.verificacion.detalle) + '">⚠ volcado dudoso</span>' : '') +
                         (juego.hayVersionNueva ? '<span class="rl-card-lib" title="Una librería de confianza tiene una versión más nueva">hay versión nueva</span>' : '') +
                         (ajeno && juego.confianza >= 70 ? '<span class="rl-card-lib" title="Librería de confianza (índice)">✔ confianza ' + (+juego.confianza) + '</span>' : '') +
                         '<div class="rl-card-nombre">' + rlEscapar(juego.filename) + '</div>';
@@ -1478,6 +1480,13 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 const cab = document.createElement('div');
                 cab.textContent = 'Cabecera: ' + (h.codigo ? h.codigo + (h.titulo ? ' · ' + h.titulo : '') : 'sin código legible');
                 caja.appendChild(cab);
+                const v = juego.verificacion;
+                const ver = document.createElement('div');
+                const textos = { verificado: '✔ Verificado en ' + (v && v.fuente) + ': ' + (v && v.nombre), dudoso: '⚠ ' + (v && v.detalle),
+                                 desconocido: (v && v.detalle) || '', sin_base: (v && v.detalle) || '' };
+                ver.textContent = 'Volcado: ' + (v ? textos[v.estado] || v.estado : 'comprobando contra No-Intro / Redump...');
+                if (v && v.estado === 'dudoso') ver.style.color = '#ffb36b';
+                caja.appendChild(ver);
                 for (const v of h.versiones) {
                     const fila = document.createElement('div');
                     fila.textContent = 'v' + v.n + (v === h.versiones[0] ? ' (actual)' : '') + ' · '
