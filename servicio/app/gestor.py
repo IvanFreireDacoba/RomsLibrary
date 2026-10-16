@@ -163,7 +163,7 @@ async def juegos(request: Request, usuario: str = Usuario):
     libreria = q.get("libreria", "todas")
     if libreria not in ("todas", "personal", "otras"):
         libreria = "todas"
-    lista = await federacion.juegos_listado(q.get("sistema") or None, q.get("q") or None, libreria)
+    lista = await federacion.juegos_listado(q.get("sistema") or None, q.get("q") or None, libreria, servir=False)
     return _ok(lista)
 
 
@@ -193,16 +193,17 @@ async def subir_o_editar(request: Request, usuario: str = Usuario):
             return _ok()
         if modo == "ficha":
             return _ok(_guardar_ficha(form, sistema, usuario))
+        titulo = _titulo_de_otro_idioma(form, sistema) if modo != "actualizar" else ""
         if modo == "enlace":
             # Juego nuevo solo con un enlace (+ nombre, carátula e idiomas): ver externos.py.
             return _ok(await externos.anadir_juego(sistema, str(form.get("nombre", "")), str(form.get("url", "")),
                                                    str(form.get("pagina", "")), usuario,
                                                    caratula=_fichero(form, "cover", obligatorio=False),
-                                                   idiomas=_idiomas(form), titulo=str(form.get("titulo", ""))))
+                                                   idiomas=_idiomas(form), titulo=titulo))
         if modo == "grupo":
             resultado = await _subir_grupo(form, sistema)
             fichas.guardar(sistema, _nombre_grupo_final(sistema, str(form.get("nombre_juego", "")).strip()), usuario,
-                           titulo=str(form.get("titulo", "")), idiomas=_idiomas(form))
+                           titulo=titulo, idiomas=_idiomas(form))
             return resultado
         if modo == "actualizar":
             return _ok(await versiones.actualizar(sistema, str(form.get("nombre", "")), _fichero(form, "rom"), usuario,
@@ -210,10 +211,23 @@ async def subir_o_editar(request: Request, usuario: str = Usuario):
         rom = _fichero(form, "rom")
         r = await nucleo.subir_juego(I, T, system=sistema, filename=str(form.get("nombre", "")).strip(), rom=rom,
                                      cover=_fichero(form, "cover", obligatorio=False))
-        fichas.guardar(sistema, r["filename"], usuario, titulo=str(form.get("titulo", "")), idiomas=_idiomas(form))
+        fichas.guardar(sistema, r["filename"], usuario, titulo=titulo, idiomas=_idiomas(form))
         return _ok()
     except HTTPException as e:
         return _error(e)
+
+
+def _titulo_de_otro_idioma(form, sistema: str) -> str:
+    """«Es otro idioma de...» al subir: solo el título de un juego que ya esté
+    subido en esa consola (si no, no hay con qué juntarlo). Vacío = juego nuevo."""
+    pedido = fichas.limpiar_titulo(form.get("titulo", ""))
+    if not pedido:
+        return ""
+    existentes = {j["titulo"] for j in federacion.juegos_propios(nucleo.nombre_seguro(sistema), servir=False)}
+    for titulo in existentes:
+        if titulo.lower() == pedido.lower():
+            return titulo
+    raise HTTPException(400, f"«{pedido}» no es ningún juego subido en esta consola: elige uno de la lista o déjalo vacío.")
 
 
 def _idiomas(form) -> list[str]:
@@ -242,6 +256,7 @@ def _guardar_ficha(form, sistema: str, usuario: str) -> dict:
         valor = str(form.get("corrupto"))
         campos["corrupto"] = {"1": True, "0": False}.get(valor)       # "auto" -> lo decide la verificación
         campos["motivo"] = str(form.get("motivo", ""))
+        campos["sha"] = federacion.sha_conocido(nucleo.nombre_seguro(sistema), nombre)   # la marca es de esta versión
     fichas.guardar(sistema, nombre, usuario, **campos)
     return {"ok": True}
 

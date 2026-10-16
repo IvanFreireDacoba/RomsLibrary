@@ -16,6 +16,10 @@ Reglas:
   el de la cadena.
 - El fichero conserva su nombre al actualizarse: así la app lo deja con el
   mismo nombre en la consola y los emuladores siguen encontrando las partidas.
+- Al actualizar se guarda aparte la versión que se sustituye (si no estaba
+  confirmada como corrupta): si la nueva resulta corrupta, se sirve esa
+  (federacion.juegos_propios). Solo una por juego, y se borra cuando la
+  actual queda verificada (No-Intro/Redump o «está bien» del administrador).
 
 Los juegos que ya existían entran solos como v1 cuando el hilo de hashes
 calcula su SHA (federacion.py). Si un fichero se renombra, su SHA ya conocido
@@ -55,8 +59,16 @@ def inicializar() -> None:
                 codigo TEXT
             );
             CREATE INDEX IF NOT EXISTS versiones_juego ON versiones (juego_id, n);
+            CREATE TABLE IF NOT EXISTS anterior_limpia (
+                juego_id TEXT PRIMARY KEY, sha TEXT NOT NULL, n INTEGER NOT NULL, tamano INTEGER NOT NULL
+            );
             """
         )
+    ANTERIORES.mkdir(parents=True, exist_ok=True)
+
+
+# Última versión limpia de cada juego, guardada al actualizarlo (ver arriba).
+ANTERIORES = config.DATOS / "anteriores"
 
 
 def _actual(con, juego_id: str) -> sqlite3.Row | None:
@@ -235,6 +247,7 @@ async def aplicar(sistema: str, nombre: str, temporal: Path, sha: str, tamano: i
     if not cod_viejo and not sin_cabecera_ok:
         raise HTTPException(428, "Este formato no tiene una cabecera que se pueda comprobar: confirma que es "
                                  "de verdad una versión nueva de este mismo juego.")
+    _guardar_anterior(sistema, nombre, ruta, juego["id"], actual)
     os.replace(temporal, ruta)
     st = ruta.stat()
     with _conectar() as con:
@@ -245,3 +258,59 @@ async def aplicar(sistema: str, nombre: str, temporal: Path, sha: str, tamano: i
         con.execute("INSERT OR REPLACE INTO hashes (ruta, tamano, mtime, sha) VALUES (?, ?, ?, ?)",
                     (f"{sistema}/{nombre}", st.st_size, st.st_mtime, sha))
     return {"ok": True, "version": n, "sha": sha}
+
+
+# ---------------- versión limpia anterior ----------------
+
+def _guardar_anterior(sistema: str, nombre: str, ruta: Path, juego_id: str, actual) -> None:
+    """Antes de sustituir el fichero: si la versión actual no está confirmada
+    como corrupta, pasa a ser la «anterior limpia» del juego (en lugar de la
+    que hubiera). Si lo está, se conserva la que ya había."""
+    import fichas
+    if actual is None or fichas.confirmado_corrupto(sistema, nombre, actual["sha"]):
+        return
+    with _conectar() as con:
+        vieja = con.execute("SELECT sha FROM anterior_limpia WHERE juego_id = ?", (juego_id,)).fetchone()
+        con.execute("INSERT OR REPLACE INTO anterior_limpia (juego_id, sha, n, tamano) VALUES (?, ?, ?, ?)",
+                    (juego_id, actual["sha"], actual["n"], actual["tamano"]))
+    os.replace(ruta, ANTERIORES / actual["sha"])          # mismo disco (/datos): instantáneo
+    if vieja and vieja["sha"] != actual["sha"]:
+        (ANTERIORES / vieja["sha"]).unlink(missing_ok=True)
+
+
+def anterior_limpia(sistema: str, nombre: str) -> dict | None:
+    """{sha, n, tamano, fichero} de la versión limpia guardada de ese juego, si la hay."""
+    with _conectar() as con:
+        fila = con.execute("SELECT a.* FROM anterior_limpia a JOIN juegos j ON j.id = a.juego_id WHERE j.ruta = ?",
+                           (f"{sistema}/{nombre}",)).fetchone()
+    if fila is None or not (ANTERIORES / fila["sha"]).is_file():
+        return None
+    return {"sha": fila["sha"], "n": fila["n"], "tamano": fila["tamano"], "fichero": ANTERIORES / fila["sha"]}
+
+
+def limpiar_anteriores() -> None:
+    """Hilo de hashes: borra las anteriores de juegos borrados y las de juegos
+    cuya versión actual ya está verificada como buena."""
+    import fichas
+    import verificacion
+    with _conectar() as con:
+        filas = con.execute("SELECT a.juego_id, a.sha, j.ruta, (SELECT sha FROM versiones v WHERE v.juego_id = a.juego_id "
+                            "ORDER BY n DESC LIMIT 1) AS actual FROM anterior_limpia a "
+                            "LEFT JOIN juegos j ON j.id = a.juego_id").fetchall()
+    for f in filas:
+        sobra = f["ruta"] is None
+        if not sobra:
+            verif = verificacion.de(f["actual"])
+            sistema, nombre = f["ruta"].split("/", 1)
+            sobra = (verif or {}).get("estado") == "ok" or fichas.confirmado_bueno(sistema, nombre, f["actual"])
+        if sobra:
+            with _conectar() as con:
+                con.execute("DELETE FROM anterior_limpia WHERE juego_id = ?", (f["juego_id"],))
+            (ANTERIORES / f["sha"]).unlink(missing_ok=True)
+    with _conectar() as con:
+        conocidas = {f["sha"] for f in con.execute("SELECT sha FROM anterior_limpia").fetchall()}
+    for fichero in ANTERIORES.iterdir():
+        # Restos de una actualización interrumpida (el ctime cambia al moverlo
+        # aquí: así nunca se borra uno que se está guardando ahora mismo).
+        if fichero.name not in conocidas and time.time() - fichero.stat().st_ctime > 3600:
+            fichero.unlink(missing_ok=True)

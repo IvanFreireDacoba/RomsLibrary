@@ -11,7 +11,9 @@ Ficha de cada juego, lo que no sale del fichero:
   "(En,Fr,De,Es,It)"...) o de etiquetas del nombre ("(ES)", "[EN]"...).
 - archivo corrupto: lo marca el administrador o, si no ha dicho nada, sale
   solo de la verificación (volcado "dudoso", ver verificacion.py). El
-  administrador puede quitar la marca automática ("está bien").
+  administrador puede quitar la marca automática ("está bien"). Su marca es
+  de UNA versión (corrupto_sha): al subir otra deja de aplicarse. Lo que el
+  administrador confirma como corrupto no se sirve (ver federacion.py).
 
 Se guarda por ruta ("<sistema>/<nombre>"); renombrar y borrar la mueven o la
 quitan (versiones.renombrado / gestor).
@@ -47,6 +49,12 @@ def inicializar() -> None:
                 ruta TEXT PRIMARY KEY, titulo TEXT, idiomas TEXT, corrupto INTEGER, motivo TEXT NOT NULL DEFAULT '',
                 usuario TEXT NOT NULL DEFAULT '', fecha REAL
             )""")
+        if "corrupto_sha" not in {c["name"] for c in con.execute("PRAGMA table_info(fichas)")}:
+            # Las marcas que ya había son de la versión que hay ahora.
+            con.execute("ALTER TABLE fichas ADD COLUMN corrupto_sha TEXT")
+            if con.execute("SELECT 1 FROM sqlite_master WHERE name = 'hashes'").fetchone():
+                con.execute("UPDATE fichas SET corrupto_sha = (SELECT sha FROM hashes h WHERE h.ruta = fichas.ruta) "
+                            "WHERE corrupto IS NOT NULL")
 
 
 def limpiar_idiomas(valores) -> list[str]:
@@ -60,7 +68,8 @@ def limpiar_titulo(titulo) -> str:
 
 
 def guardar(sistema: str, nombre: str, usuario: str, **campos) -> None:
-    """Campos: titulo, idiomas (lista), corrupto (True/False/None = automático), motivo."""
+    """Campos: titulo, idiomas (lista), corrupto (True/False/None = automático), motivo y
+    sha (la versión a la que se refiere la marca de corrupto)."""
     ruta = f"{sistema}/{nombre}"
     with _conectar() as con:
         con.execute("INSERT OR IGNORE INTO fichas (ruta) VALUES (?)", (ruta,))
@@ -71,8 +80,9 @@ def guardar(sistema: str, nombre: str, usuario: str, **campos) -> None:
                         (",".join(limpiar_idiomas(campos["idiomas"])) or None, ruta))
         if "corrupto" in campos:
             c = campos["corrupto"]
-            con.execute("UPDATE fichas SET corrupto = ?, motivo = ? WHERE ruta = ?",
-                        (None if c is None else int(bool(c)), str(campos.get("motivo") or "")[:300], ruta))
+            con.execute("UPDATE fichas SET corrupto = ?, motivo = ?, corrupto_sha = ? WHERE ruta = ?",
+                        (None if c is None else int(bool(c)), str(campos.get("motivo") or "")[:300],
+                         None if c is None else campos.get("sha"), ruta))
         con.execute("UPDATE fichas SET usuario = ?, fecha = ? WHERE ruta = ?", (usuario, time.time(), ruta))
 
 
@@ -89,6 +99,27 @@ def borrar(sistema: str, nombre: str) -> None:
 def todas() -> dict[str, dict]:
     with _conectar() as con:
         return {f["ruta"]: dict(f) for f in con.execute("SELECT * FROM fichas").fetchall()}
+
+
+def _marca(ficha: dict | None, sha: str | None) -> int | None:
+    """1/0 que puso el administrador a ESTA versión; None si no dijo nada de ella."""
+    if not ficha or ficha.get("corrupto") is None:
+        return None
+    return ficha["corrupto"] if ficha.get("corrupto_sha") in (None, sha) else None
+
+
+def _ficha(sistema: str, nombre: str) -> dict | None:
+    with _conectar() as con:
+        f = con.execute("SELECT * FROM fichas WHERE ruta = ?", (f"{sistema}/{nombre}",)).fetchone()
+    return dict(f) if f else None
+
+
+def confirmado_corrupto(sistema: str, nombre: str, sha: str | None) -> bool:
+    return _marca(_ficha(sistema, nombre), sha) == 1
+
+
+def confirmado_bueno(sistema: str, nombre: str, sha: str | None) -> bool:
+    return _marca(_ficha(sistema, nombre), sha) == 0
 
 
 def titulo_por_defecto(nombre: str) -> str:
@@ -123,7 +154,7 @@ def completar(j: dict, ficha: dict | None, verif: dict | None) -> None:
     indicados = limpiar_idiomas(ficha.get("idiomas"))
     j["idiomas"] = indicados or deducir_idiomas(verif.get("nombre") if verif else None, j["filename"])
     j["idiomasDeducidos"] = not indicados and bool(j["idiomas"])     # solo para el gestor
-    marca = ficha.get("corrupto")
+    marca = _marca(ficha, j.get("sha"))
     if marca is None and verif and verif.get("estado") == "dudoso":
         j["corrupto"], j["motivoCorrupto"] = True, "Volcado dudoso: " + (verif.get("detalle") or "")
         j["corruptoAutomatico"] = True

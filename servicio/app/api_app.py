@@ -116,7 +116,10 @@ async def api_app(request: Request):
         if accion == "caratula":
             return nucleo.servir_caratula(_param(q, "system"), _param(q, "filename"), I, T)
         if accion == "descargar":
-            return nucleo.descargar_juego(_param(q, "system"), _param(q, "filename"), I, T)
+            return federacion.servir_descarga(_param(q, "system"), _param(q, "filename"))
+        if accion in ("grupo_ficheros", "grupo_fichero"):
+            # Lo confirmado como corrupto no se sirve (410).
+            federacion.fichero_limpio(nucleo.nombre_seguro(_param(q, "system")), nucleo.nombre_seguro(_param(q, "grupo")))
         if accion == "grupo_ficheros":
             return nucleo.ficheros_de_grupo(I, T, system=_param(q, "system"), grupo=_param(q, "grupo"))
         if accion == "grupo_fichero":

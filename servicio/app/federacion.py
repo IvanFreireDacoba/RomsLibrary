@@ -39,7 +39,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 
 import ajustes
 import config
@@ -156,6 +156,7 @@ def arrancar_hilo_hashes() -> None:
         while True:
             try:
                 _calcular_hashes_pendientes()
+                versiones.limpiar_anteriores()
             except Exception as e:  # noqa: BLE001 -- el hilo no puede morir
                 print(f"[federacion] error calculando hashes: {e}", flush=True)
             time.sleep(300)
@@ -364,7 +365,10 @@ async def catalogo_de(servicio: dict) -> list[dict]:
     return juegos
 
 
-def juegos_propios(sistema: str | None = None, texto: str | None = None) -> list[dict]:
+def juegos_propios(sistema: str | None = None, texto: str | None = None, servir: bool = True) -> list[dict]:
+    """servir=True: como lo ven las apps y las otras librerías (lo confirmado
+    como corrupto se cambia por su versión limpia anterior o no se puede
+    descargar). servir=False: el estado real, para el gestor."""
     import main as nucleo
     juegos = nucleo.listar_juegos_galeria(nucleo.PETICION_INTERNA, nucleo.TOKEN_SISTEMA, system=sistema, q=texto)
     cadenas = versiones.cadenas_propias()
@@ -392,13 +396,46 @@ def juegos_propios(sistema: str | None = None, texto: str | None = None) -> list
         j["origen"] = None
         j["libreria"] = ajustes.leer("nombre")
         j["editable"] = True
+        j["descargable"] = True
+        if j["corrupto"] and not j["corruptoAutomatico"]:
+            limpia = versiones.anterior_limpia(j["system"], j["filename"])
+            j["sirveVersion"] = limpia["n"] if limpia else None     # para el gestor
+            if servir and limpia:
+                # Se sirve la versión limpia, aunque sea más vieja. El enlace
+                # del autor daría la corrupta: se descarga de aquí.
+                j.update(sha=limpia["sha"], version=limpia["n"], anteriores=j["anteriores"][:limpia["n"] - 1],
+                         sizeBytes=limpia["tamano"], corrupto=False, motivoCorrupto="", fuenteExterna=None,
+                         shaEnlace=None)
+            elif servir:
+                j.update(descargable=False, fuenteExterna=None, shaEnlace=None)
     return juegos
 
 
-async def red() -> tuple[list[dict], list[dict], list[list[dict]], linaje.Linaje]:
+def servir_descarga(sistema: str, nombre: str):
+    """accion=descargar de la app y de otras librerías (no el gestor)."""
+    import main as nucleo
+    limpio = fichero_limpio(nucleo.nombre_seguro(sistema), nucleo.nombre_seguro(nombre))
+    if limpio is None:
+        return nucleo.descargar_juego(sistema, nombre, nucleo.PETICION_INTERNA, nucleo.TOKEN_SISTEMA)
+    return FileResponse(limpio, media_type="application/octet-stream", filename=nucleo.nombre_seguro(nombre))
+
+
+def fichero_limpio(sistema: str, nombre: str) -> Path | None:
+    """Antes de servir un juego propio a una app u otra librería: None si se
+    sirve tal cual, la versión limpia anterior si lo actual está confirmado
+    como corrupto, o 410 si no hay ninguna limpia."""
+    if not fichas.confirmado_corrupto(sistema, nombre, sha_conocido(sistema, nombre)):
+        return None
+    limpia = versiones.anterior_limpia(sistema, nombre)
+    if limpia is None:
+        raise HTTPException(status_code=410, detail="Archivo corrupto: esta librería no lo sirve.")
+    return limpia["fichero"]
+
+
+async def red(servir: bool = True) -> tuple[list[dict], list[dict], list[list[dict]], linaje.Linaje]:
     """Juegos propios, librerías públicas, sus catálogos y el linaje de
     versiones que sale de todo ello (ver linaje.py)."""
-    propios = juegos_propios()
+    propios = juegos_propios(servir=servir)
     servicios = await otras_librerias()
     catalogos = await asyncio.gather(*(catalogo_de(s) for s in servicios))
     lin = linaje.Linaje()
@@ -414,13 +451,13 @@ async def red() -> tuple[list[dict], list[dict], list[list[dict]], linaje.Linaje
     return propios, servicios, catalogos, lin
 
 
-async def juegos_listado(sistema: str | None, texto: str | None, libreria: str) -> list[dict]:
+async def juegos_listado(sistema: str | None, texto: str | None, libreria: str, servir: bool = True) -> list[dict]:
     """libreria: "personal" | "otras" | "todas". Sin duplicados por SHA y,
     de otras librerías, sin versiones que se sabe que están superadas."""
     if libreria == "personal":
-        return juegos_propios(sistema, texto)
-    todos, servicios, catalogos, lin = await red()
-    propios = juegos_propios(sistema, texto) if libreria == "todas" else []
+        return juegos_propios(sistema, texto, servir)
+    todos, servicios, catalogos, lin = await red(servir)
+    propios = juegos_propios(sistema, texto, servir) if libreria == "todas" else []
     for j in propios:
         # Una librería de confianza tiene una versión más nueva de este juego.
         j["hayVersionNueva"] = bool(j["sha"] and lin.superada(j["sha"]))
@@ -450,7 +487,7 @@ async def obsoletas_para_app() -> list[dict]:
     donde: dict[str, dict] = {}       # sha actual -> dónde descargarlo
     tamanos: dict[str, int] = {}
     for j in propios:
-        if j["sha"] and not j.get("esGrupo"):
+        if j["sha"] and not j.get("esGrupo") and j["descargable"]:
             donde.setdefault(j["sha"], {"filename": j["filename"], "sizeBytes": j["sizeBytes"], "origenUrl": None,
                                         "fuenteExterna": j.get("fuenteExterna")})
         for s, t in j["anteriores"]:
@@ -549,7 +586,7 @@ async def catalogo(request: Request):
     return [{k: j[k] for k in ("system", "filename", "sizeBytes", "coverUrl", "esGrupo", "tipoGrupo", "roles", "sha",
                                "version", "anteriores", "codigo", "fuenteExterna", "shaEnlace", "paginaAutor",
                                "titulo", "idiomas", "corrupto", "motivoCorrupto", "corruptoAutomatico")}
-            for j in juegos_propios()]
+            for j in juegos_propios() if j["descargable"]]
 
 
 @router.get("/juego")
@@ -562,7 +599,9 @@ async def juego(request: Request):
     I, T = nucleo.PETICION_INTERNA, nucleo.TOKEN_SISTEMA
     accion = q.get("accion")
     if accion == "descargar":
-        return nucleo.descargar_juego(q["system"], q["filename"], I, T)
+        return servir_descarga(q["system"], q["filename"])
+    if accion in ("grupo_ficheros", "grupo_fichero"):
+        fichero_limpio(nucleo.nombre_seguro(q["system"]), nucleo.nombre_seguro(q["grupo"]))
     if accion == "grupo_ficheros":
         return nucleo.ficheros_de_grupo(I, T, system=q["system"], grupo=q["grupo"])
     if accion == "grupo_fichero":
