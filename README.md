@@ -7,6 +7,11 @@ Se conecta a una librería [RomsLibrary](https://github.com/IvanFreireDacoba/Rom
 instala los juegos en tu carpeta de ROMs y sincroniza las partidas de
 RetroArch entre tus consolas, también con las Android. Se maneja con el mando.
 
+> **Legal:** software de gestión y sincronización; no incluye ROMs ni concede
+> derechos sobre juegos u otros contenidos de terceros. Usa solo ficheros que
+> tengas derecho a obtener, guardar y compartir. Ver [LEGAL.md](LEGAL.md).
+> La licencia MIT cubre solo el código.
+
 ## Descargar
 
 Los paquetes están en **[Releases](https://github.com/IvanFreireDacoba/RomsLibrary-Cliente/releases/latest)**.
@@ -22,9 +27,12 @@ Una vez instalada se actualiza sola.
 
 En *Start → Ajustes*:
 
-- **Servidor:** viene `https://sund.es` (librería pública, sin clave). Puedes
-  poner cualquier otra librería RomsLibrary.
-- **Clave de acceso:** solo para librerías privadas (se ve en su gestor web).
+- **Servidor:** viene `https://sund.es`. Puedes poner cualquier otra
+  librería RomsLibrary.
+- **Clave de acceso:** sin clave ves solo los juegos que la librería comparte
+  (si es pública). Para verla entera, pon su clave o usa **Solicitar acceso a
+  esta librería**: su administrador acepta o rechaza esta consola desde su
+  gestor.
 - **Nombre de la consola:** con él la reconocerán las consolas con las que
   sincronices partidas.
 - **Carpeta de ROMs:** la propone según el sistema; se puede cambiar, también
@@ -93,10 +101,12 @@ Python + pygame-ce, empaquetado con PyInstaller.
 - RomsLibrary es software para gestionar **tu propia colección**. No incluye
   juegos, BIOS ni firmwares, no enlaza a ellos y no dice dónde conseguirlos.
 - Cada persona es responsable de lo que guarda y comparte con él. Usa solo
-  juegos que tengas derecho a usar y, si tu librería es pública, a distribuir:
-  tus propias copias de seguridad, homebrew o juegos de licencia libre. En
-  muchos países, incluida España, distribuir copias de juegos comerciales sin
-  permiso es ilegal aunque sea gratis.
+  juegos que tengas derecho a usar. Comparte («Compartido», o dando acceso a
+  tu librería) solo lo que tengas derecho a distribuir: homebrew, juegos de
+  licencia libre o con permiso del titular. Una copia de seguridad de tu
+  original es solo para ti y no se puede compartir. En muchos países,
+  incluida España, distribuir copias de juegos comerciales sin permiso es
+  ilegal aunque sea gratis. Ver [LEGAL.md](LEGAL.md).
 - La app solo descarga lo que ofrece la librería a la que la conectes, o las
   otras librerías públicas que esta te enseñe (en ese caso, directamente de
   ellas). Quien gestiona cada librería es responsable de su contenido.
