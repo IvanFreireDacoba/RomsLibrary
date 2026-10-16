@@ -322,8 +322,19 @@ public class MainActivity extends BaseActivity {
         actualizarEstadoInicial();
         comprobarPermisoAlmacenamientoCompleto();
         actualizarSubtitulo();
-        if (!cuenta.registrada()) {
-            mostrarConfiguracionServidor(true);
+        if (!Partidas.registrada(this)) {
+            // Puede estar ya registrada (reinstalación, o venir de una versión que
+            // guardaba las partidas en la librería): si no, se pide configurarla.
+            Context contextoApp = getApplicationContext();
+            new Thread(() -> {
+                boolean ok = Partidas.recuperar(contextoApp);
+                runOnUiThread(() -> {
+                    actualizarSubtitulo();
+                    if (!ok && !isFinishing()) {
+                        mostrarConfiguracionServidor(true);
+                    }
+                });
+            }).start();
         }
     }
 
@@ -332,16 +343,16 @@ public class MainActivity extends BaseActivity {
     /** Nombre e identificador de esta consola siempre visibles bajo el título. */
     private void actualizarSubtitulo() {
         if (getActionBar() != null) {
-            getActionBar().setSubtitle(cuenta.registrada()
-                    ? cuenta.nombre + " · " + cuenta.identificador
+            getActionBar().setSubtitle(Partidas.registrada(this)
+                    ? Partidas.nombre(this) + " · " + Partidas.identificador(this)
                     : "Consola sin configurar");
         }
     }
 
     /**
-     * Servidor (URL + clave de acceso) y nombre de la consola. La primera vez
-     * registra la consola y le asigna su identificador XXXXX-XXXXX; después
-     * sirve para cambiar de servidor (cada servidor tiene su identificador).
+     * Librería (URL + clave de acceso) y nombre de la consola. La consola se
+     * registra en el servicio de partidas (identificador XXXXX-XXXXX), que es
+     * el mismo sea cual sea la librería: cambiar de librería no la cambia.
      */
     private void mostrarConfiguracionServidor(boolean primeraVez) {
         LinearLayout formulario = new LinearLayout(this);
@@ -359,8 +370,8 @@ public class MainActivity extends BaseActivity {
         campoClave.setText(cuenta.clave);
         EditText campoNombre = new EditText(this);
         campoNombre.setHint("Nombre de esta consola, p.ej. Retroid de Efe");
-        if (cuenta.nombre != null) {
-            campoNombre.setText(cuenta.nombre);
+        if (Partidas.nombre(this) != null) {
+            campoNombre.setText(Partidas.nombre(this));
         }
         TextView ayuda = new TextView(this);
         ayuda.setText("El nombre y el identificador de la consola los verán las consolas con las que sincronices partidas.");
@@ -390,23 +401,16 @@ public class MainActivity extends BaseActivity {
             v.setEnabled(false);
             new Thread(() -> {
                 try {
-                    Cuenta nueva = Cuenta.configurar(getApplicationContext(), url, clave, nombre);
-                    if (cuenta.registrada() && cuenta.url.equals(nueva.url) && !nombre.equals(nueva.nombre)) {
-                        // Ya registrada en este servidor: registrar no cambia el nombre, renombrar sí.
-                        java.util.Map<String, String> campos = nueva.identidad();
-                        campos.put("nombre", nombre);
-                        ApiClient.postFormulario(nueva.url, nueva.clave, RUTA_API + "?accion=consola_accion&op=renombrar", campos);
-                        Cuenta.guardarNombre(getApplicationContext(), nueva.url, nombre);
-                        nueva = Cuenta.cargar(getApplicationContext());
-                    }
-                    Cuenta lista = nueva;
+                    Cuenta lista = Cuenta.configurar(getApplicationContext(), url, clave);
+                    Partidas.registrar(getApplicationContext(), nombre);
                     runOnUiThread(() -> {
                         cuenta = lista;
                         baseUrl = lista.url;
                         token = lista.clave;
                         actualizarSubtitulo();
                         dialogo.dismiss();
-                        Toast.makeText(this, "Consola " + lista.nombre + " · " + lista.identificador, Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, "Consola " + Partidas.nombre(this) + " · " + Partidas.identificador(this),
+                                Toast.LENGTH_LONG).show();
                         cargarSistemasDisponibles();
                         cargarJuegos();
                     });
@@ -428,14 +432,13 @@ public class MainActivity extends BaseActivity {
     private boolean preguntandoSolicitud = false;
 
     private void comprobarSolicitudesPendientes() {
-        if (!cuenta.registrada() || preguntandoSolicitud) {
+        if (!Partidas.registrada(this) || preguntandoSolicitud) {
             return;
         }
-        Cuenta c = cuenta;
+        Context contextoApp = getApplicationContext();
         new Thread(() -> {
             try {
-                org.json.JSONObject estado = new org.json.JSONObject(ApiClient.getTexto(c.url, c.clave,
-                        RUTA_API + "?accion=consola_estado" + c.consultaIdentidad(), 10000));
+                org.json.JSONObject estado = new org.json.JSONObject(Partidas.get(contextoApp, "/estado", 10000));
                 org.json.JSONArray recibidas = estado.getJSONArray("solicitudes_recibidas");
                 if (recibidas.length() == 0) {
                     return;
@@ -443,7 +446,7 @@ public class MainActivity extends BaseActivity {
                 org.json.JSONObject s = recibidas.getJSONObject(0);
                 String nombre = s.getString("nombre");
                 String ident = s.getString("identificador");
-                String sol = String.valueOf(s.getInt("solicitud"));
+                long sol = s.getLong("solicitud");
                 runOnUiThread(() -> {
                     if (preguntandoSolicitud || isFinishing()) {
                         return;
@@ -453,8 +456,8 @@ public class MainActivity extends BaseActivity {
                             .setTitle("Solicitud de sincronización")
                             .setMessage(nombre + " (" + ident + ") quiere sincronizar sus partidas con esta consola.\n\n"
                                     + "Si aceptas, las dos consolas compartirán las mismas partidas (se queda siempre la más reciente).")
-                            .setPositiveButton("Aceptar", (d, w) -> responderSolicitud(c, sol, true, nombre))
-                            .setNegativeButton("Rechazar", (d, w) -> responderSolicitud(c, sol, false, nombre))
+                            .setPositiveButton("Aceptar", (d, w) -> responderSolicitud(sol, true, nombre))
+                            .setNegativeButton("Rechazar", (d, w) -> responderSolicitud(sol, false, nombre))
                             .setNeutralButton("Luego", null)
                             .setOnDismissListener(d -> preguntandoSolicitud = false)
                             .show();
@@ -465,13 +468,12 @@ public class MainActivity extends BaseActivity {
         }).start();
     }
 
-    private void responderSolicitud(Cuenta c, String solicitud, boolean aceptar, String nombre) {
+    private void responderSolicitud(long solicitud, boolean aceptar, String nombre) {
+        Context contextoApp = getApplicationContext();
         new Thread(() -> {
             try {
-                java.util.Map<String, String> campos = c.identidad();
-                campos.put("solicitud", solicitud);
-                campos.put("aceptar", aceptar ? "true" : "false");
-                ApiClient.postFormulario(c.url, c.clave, RUTA_API + "?accion=consola_accion&op=responder", campos);
+                Partidas.postJson(contextoApp, "/consola/responder",
+                        new org.json.JSONObject().put("solicitud", solicitud).put("aceptar", aceptar));
                 runOnUiThread(() -> Toast.makeText(this, aceptar ? "Sincronizada con " + nombre : "Solicitud rechazada",
                         Toast.LENGTH_LONG).show());
                 if (aceptar) {
@@ -811,7 +813,7 @@ public class MainActivity extends BaseActivity {
             reiniciarEsDeManual();
             return true;
         } else if (id == R.id.menuSincronizarConsolas || id == R.id.menuConsolasBloqueadas) {
-            if (!cuenta.registrada()) {
+            if (!Partidas.registrada(this)) {
                 mostrarConfiguracionServidor(false);
                 return true;
             }
@@ -1209,7 +1211,7 @@ public class MainActivity extends BaseActivity {
         String base = baseUrl, clave = token;
         new Thread(() -> {
             try {
-                int hechos = ActualizadorRoms.comprobar(contextoApp, Cuenta.cargar(contextoApp), base, clave, arbol,
+                int hechos = ActualizadorRoms.comprobar(contextoApp, base, clave, arbol,
                         texto -> runOnUiThread(() -> Toast.makeText(this, texto, Toast.LENGTH_SHORT).show()));
                 if (hechos > 0) {
                     runOnUiThread(this::cargarJuegos);
@@ -1259,7 +1261,7 @@ public class MainActivity extends BaseActivity {
                         instalados.add(juego);
                     }
                 }
-                GuardadosSync.sincronizarInstalados(contextoApp, Cuenta.cargar(contextoApp), instalados);
+                GuardadosSync.sincronizarInstalados(contextoApp, instalados);
             } catch (Exception e) {
                 GuardadosSync.log("ERROR en la sincronización en segundo plano: " + e);
             } finally {
@@ -1512,7 +1514,7 @@ public class MainActivity extends BaseActivity {
         // Subir el guardado es ahora una llamada de red (best-effort, nunca
         // bloquea el borrado del ROM) -- ya no puede ir en el hilo principal.
         new Thread(() -> {
-            GuardadosSync.subirAntesDeDesinstalar(this, cuenta, juego);
+            GuardadosSync.subirAntesDeDesinstalar(this, juego);
             boolean borrado = fichero.delete();
             runOnUiThread(() -> {
                 if (borrado) {
@@ -1606,7 +1608,7 @@ public class MainActivity extends BaseActivity {
                     // Best-effort, nunca puede tumbar una instalación que ya ha
                     // terminado con éxito (ver GuardadosSync: compara fechas en
                     // ambas direcciones antes de tocar nada).
-                    GuardadosSync.restaurarTrasInstalar(this, cuenta, juego);
+                    GuardadosSync.restaurarTrasInstalar(this, juego);
                     // Eden no tiene forma de recibir updates/DLC automáticamente
                     // (los identifica por Title ID embebido en el propio fichero,
                     // y la instalación es SIEMPRE manual vía su propio menú

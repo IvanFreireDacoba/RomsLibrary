@@ -1,7 +1,6 @@
 package es.jarjar.romlibrary;
 
 import android.content.Context;
-import android.net.Uri;
 import android.os.Environment;
 
 import org.json.JSONArray;
@@ -101,12 +100,12 @@ final class GuardadosSync {
     // ---------- Puntos de entrada ----------
 
     /** Sincroniza (subir y bajar, gana lo más reciente) todos los juegos instalados. Bloqueante. */
-    static void sincronizarInstalados(Context context, Cuenta cuenta, List<Juego> instalados) {
-        if (!cuenta.registrada()) {
+    static void sincronizarInstalados(Context context, List<Juego> instalados) {
+        if (!Partidas.registrada(context)) {
             return;
         }
         try {
-            Map<String, Double> remotos = indiceRemoto(cuenta);
+            Map<String, Double> remotos = indiceRemoto(context);
             Map<String, Entrada> entradas = new LinkedHashMap<>();
             for (Juego juego : instalados) {
                 for (Entrada e : entradasDe(juego, remotos)) {
@@ -117,7 +116,7 @@ final class GuardadosSync {
             int bajados = 0;
             for (Entrada e : entradas.values()) {
                 try {
-                    int r = sincronizarEntrada(context, cuenta, e, remotos.get(e.id()));
+                    int r = sincronizarEntrada(context, e, remotos.get(e.id()));
                     if (r > 0) {
                         subidos++;
                     } else if (r < 0) {
@@ -136,38 +135,37 @@ final class GuardadosSync {
     }
 
     /** Antes de borrar un juego: sube sus guardados si los locales son más nuevos. */
-    static void subirAntesDeDesinstalar(Context context, Cuenta cuenta, Juego juego) {
-        sincronizarInstalados(context, cuenta, java.util.Collections.singletonList(juego));
+    static void subirAntesDeDesinstalar(Context context, Juego juego) {
+        sincronizarInstalados(context, java.util.Collections.singletonList(juego));
     }
 
     /** Recién instalado un juego: baja sus guardados del servidor (si los hay). */
-    static void restaurarTrasInstalar(Context context, Cuenta cuenta, Juego juego) {
-        sincronizarInstalados(context, cuenta, java.util.Collections.singletonList(juego));
+    static void restaurarTrasInstalar(Context context, Juego juego) {
+        sincronizarInstalados(context, java.util.Collections.singletonList(juego));
     }
 
     // ---------- Comparación y transferencia ----------
 
     /** +1 si se ha subido, -1 si se ha bajado, 0 si ya estaban iguales. */
-    private static int sincronizarEntrada(Context context, Cuenta cuenta, Entrada e, Double mtimeRemotoSeg)
+    private static int sincronizarEntrada(Context context, Entrada e, Double mtimeRemotoSeg)
             throws Exception {
         long local = e.mtimeLocal();
         long remoto = mtimeRemotoSeg == null ? 0 : Math.round(mtimeRemotoSeg * 1000);
         if (local > 0 && local > remoto + TOLERANCIA_MS) {
-            subir(context, cuenta, e, local);
+            subir(context, e, local);
             log("subido " + e.id());
             return 1;
         }
         if (remoto > 0 && remoto > local + TOLERANCIA_MS) {
-            bajar(context, cuenta, e, remoto);
+            bajar(context, e, remoto);
             log("bajado " + e.id());
             return -1;
         }
         return 0;
     }
 
-    private static Map<String, Double> indiceRemoto(Cuenta cuenta) throws Exception {
-        String json = ApiClient.getTexto(cuenta.url, cuenta.clave,
-                Cuenta.RUTA_API + "?accion=guardado2_indice" + cuenta.consultaIdentidad(), 20000);
+    private static Map<String, Double> indiceRemoto(Context context) throws Exception {
+        String json = Partidas.get(context, "/indice", 20000);
         JSONArray arr = new JSONArray(json);
         Map<String, Double> remotos = new HashMap<>();
         for (int i = 0; i < arr.length(); i++) {
@@ -178,34 +176,30 @@ final class GuardadosSync {
         return remotos;
     }
 
-    private static void subir(Context context, Cuenta cuenta, Entrada e, long mtimeLocal) throws Exception {
-        Map<String, String> campos = cuenta.identidad();
+    private static void subir(Context context, Entrada e, long mtimeLocal) throws Exception {
+        Map<String, String> campos = new LinkedHashMap<>();
         campos.put("sistema", e.sistema);
         campos.put("clave", e.clave);
         campos.put("nombre_fichero", e.nombre);
         campos.put("mtime_dispositivo", String.valueOf(mtimeLocal / 1000.0));
         if (!e.carpeta) {
-            ApiClient.subirFichero(cuenta.url, cuenta.clave, Cuenta.RUTA_API + "?accion=guardado2_subir", campos, e.nombre, e.local);
+            Partidas.subir(context, campos, e.nombre, e.local);
             return;
         }
         File zip = File.createTempFile("guardado", ".zip", context.getCacheDir());
         try {
             comprimirCarpeta(e.local, zip);
-            ApiClient.subirFichero(cuenta.url, cuenta.clave, Cuenta.RUTA_API + "?accion=guardado2_subir", campos, e.nombre, zip);
+            Partidas.subir(context, campos, e.nombre, zip);
         } finally {
             zip.delete();
         }
     }
 
-    private static void bajar(Context context, Cuenta cuenta, Entrada e, long mtimeRemoto) throws Exception {
+    private static void bajar(Context context, Entrada e, long mtimeRemoto) throws Exception {
         File temporal = File.createTempFile("guardado", null, context.getCacheDir());
         try {
             try (OutputStream out = new FileOutputStream(temporal)) {
-                ApiClient.descargarAFichero(cuenta.url, cuenta.clave,
-                        Cuenta.RUTA_API + "?accion=guardado2_bajar" + cuenta.consultaIdentidad()
-                                + "&sistema=" + Uri.encode(e.sistema) + "&clave=" + Uri.encode(e.clave)
-                                + "&nombre_fichero=" + Uri.encode(e.nombre),
-                        out);
+                Partidas.bajar(context, e.sistema, e.clave, e.nombre, out);
             }
             if (e.carpeta) {
                 descomprimirSobreCarpeta(temporal, e.local);

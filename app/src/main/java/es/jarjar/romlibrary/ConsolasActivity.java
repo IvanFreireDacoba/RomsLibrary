@@ -16,7 +16,6 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.util.Map;
 
 /**
  * "Sincronizar consolas" y "Consolas bloqueadas" (según el extra MODO).
@@ -40,7 +39,6 @@ public class ConsolasActivity extends BaseActivity {
     private static final int TEXTO = 0xFFD7E4D7;
     private static final int APAGADO = 0xFF6F8F6F;
 
-    private Cuenta cuenta;
     private boolean modoBloqueadas;
     private LinearLayout contenido;
 
@@ -62,8 +60,7 @@ public class ConsolasActivity extends BaseActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        cuenta = Cuenta.cargar(this);
-        if (!cuenta.registrada()) {
+        if (!Partidas.registrada(this)) {
             Toast.makeText(this, "Configura primero el servidor y el nombre de la consola", Toast.LENGTH_LONG).show();
             finish();
             return;
@@ -78,8 +75,7 @@ public class ConsolasActivity extends BaseActivity {
         contenido.addView(texto("Cargando...", APAGADO, 14));
         new Thread(() -> {
             try {
-                String json = ApiClient.getTexto(cuenta.url, cuenta.clave,
-                        Cuenta.RUTA_API + "?accion=consola_estado" + cuenta.consultaIdentidad(), 15000);
+                String json = Partidas.get(getApplicationContext(), "/estado", 15000);
                 JSONObject estado = new JSONObject(json);
                 runOnUiThread(() -> pintar(estado));
             } catch (Exception e) {
@@ -100,15 +96,10 @@ public class ConsolasActivity extends BaseActivity {
     private void accion(String op, String campo, String valor, String campo2, String valor2, String mensajeOk) {
         new Thread(() -> {
             try {
-                Map<String, String> campos = cuenta.identidad();
-                if (campo != null) {
-                    campos.put(campo, valor);
-                }
-                if (campo2 != null) {
-                    campos.put(campo2, valor2);
-                }
-                ApiClient.postFormulario(cuenta.url, cuenta.clave,
-                        Cuenta.RUTA_API + "?accion=consola_accion&op=" + op, campos);
+                JSONObject datos = new JSONObject();
+                poner(datos, campo, valor);
+                poner(datos, campo2, valor2);
+                Partidas.postJson(getApplicationContext(), "/consola/" + op, datos);
                 runOnUiThread(() -> {
                     Toast.makeText(this, mensajeOk, Toast.LENGTH_LONG).show();
                     recargar();
@@ -117,6 +108,20 @@ public class ConsolasActivity extends BaseActivity {
                 runOnUiThread(() -> Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show());
             }
         }).start();
+    }
+
+    /** «solicitud» es un número y «aceptar» un sí/no; lo demás, texto. */
+    private static void poner(JSONObject datos, String campo, String valor) throws org.json.JSONException {
+        if (campo == null) {
+            return;
+        }
+        if (campo.equals("solicitud")) {
+            datos.put(campo, Long.parseLong(valor));
+        } else if (campo.equals("aceptar")) {
+            datos.put(campo, Boolean.parseBoolean(valor));
+        } else {
+            datos.put(campo, valor);
+        }
     }
 
     // ---------- Pintado ----------
@@ -156,7 +161,7 @@ public class ConsolasActivity extends BaseActivity {
                     return;
                 }
                 accion("solicitar", "otra", otra,
-                        "Solicitud enviada: la otra consola tiene que aceptarla al abrir RomsLibrary");
+                        "Solicitud enviada: si el identificador es correcto, la otra consola tendrá que aceptarla al abrir RomsLibrary");
             }));
 
             JSONArray recibidas = estado.getJSONArray("solicitudes_recibidas");
@@ -228,11 +233,24 @@ public class ConsolasActivity extends BaseActivity {
                     if (nombre.isEmpty()) {
                         return;
                     }
-                    Cuenta.guardarNombre(this, cuenta.url, nombre);
-                    accion("renombrar", "nombre", nombre, "Nombre cambiado");
+                    renombrar(nombre);
                 })
                 .setNegativeButton("Cancelar", null)
                 .show();
+    }
+
+    private void renombrar(String nombre) {
+        new Thread(() -> {
+            try {
+                Partidas.renombrar(getApplicationContext(), nombre);
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Nombre cambiado", Toast.LENGTH_LONG).show();
+                    recargar();
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        }).start();
     }
 
     private void confirmar(String titulo, String mensaje, Runnable siAcepta) {

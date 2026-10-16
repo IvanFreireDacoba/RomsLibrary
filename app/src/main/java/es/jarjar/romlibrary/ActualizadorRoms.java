@@ -61,7 +61,7 @@ final class ActualizadorRoms {
     }
 
     /** Bloqueante (hilo en segundo plano). Devuelve cuántos juegos ha actualizado. */
-    static int comprobar(Context ctx, Cuenta cuenta, String baseUrl, String token, Uri arbolUri, Aviso aviso) {
+    static int comprobar(Context ctx, String baseUrl, String token, Uri arbolUri, Aviso aviso) {
         if (arbolUri == null) {
             return 0;
         }
@@ -79,7 +79,7 @@ final class ActualizadorRoms {
             for (Tarea t : tareas) {
                 String nombre = t.fichero.getName();
                 aviso.mostrar("Actualizando " + nombre + " a la versión " + t.o.nActual + "…");
-                if (actualizar(ctx, cuenta, baseUrl, token, t)) {
+                if (actualizar(ctx, baseUrl, token, t)) {
                     hechas++;
                     aviso.mostrar("Actualizado: " + nombre + " (v" + t.o.n + " → v" + t.o.nActual + ")");
                 }
@@ -154,13 +154,13 @@ final class ActualizadorRoms {
         return tareas;
     }
 
-    private static boolean actualizar(Context ctx, Cuenta cuenta, String baseUrl, String token, Tarea t) {
+    private static boolean actualizar(Context ctx, String baseUrl, String token, Tarea t) {
         String nombre = t.fichero.getName();
         DocumentFile temporal = null;
         try {
             // 1. Partidas a salvo en el servidor antes de tocar nada.
             Juego juego = new Juego(t.o.sistema, nombre, t.fichero.length(), null, false, null, 0, 0, 0);
-            GuardadosSync.subirAntesDeDesinstalar(ctx, cuenta, juego);
+            GuardadosSync.subirAntesDeDesinstalar(ctx, juego);
 
             // 2. Versión actual a un temporal y comprobada.
             temporal = t.carpeta.createFile("application/octet-stream", nombre + ".actualizando");

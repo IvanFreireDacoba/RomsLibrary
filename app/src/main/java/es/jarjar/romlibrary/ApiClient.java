@@ -32,8 +32,23 @@ public final class ApiClient {
      * los logs). Las librerías públicas no la necesitan: vacía = sin clave.
      */
     static void ponerClave(HttpURLConnection con, String token) {
-        if (token != null && !token.isEmpty()) {
+        if (token != null && token.startsWith(SESION)) {
+            con.setRequestProperty("Authorization", token);     // servicio de partidas (ver Partidas)
+        } else if (token != null && !token.isEmpty()) {
             con.setRequestProperty("X-App-Token", token);
+        }
+    }
+
+    /** Prefijo de un token de sesión del servicio de partidas (en vez de la clave de una librería). */
+    static final String SESION = "Bearer ";
+
+    /** Respuesta HTTP de error, con su código (p.ej. 401: la sesión ha caducado). */
+    static final class ErrorHttp extends IOException {
+        final int codigo;
+
+        ErrorHttp(int codigo, String mensaje) {
+            super(mensaje);
+            this.codigo = codigo;
         }
     }
 
@@ -50,7 +65,7 @@ public final class ApiClient {
         try {
             int codigo = con.getResponseCode();
             if (codigo != 200) {
-                throw new IOException(detalleError(con, codigo));
+                throw new ErrorHttp(codigo, detalleError(con, codigo));
             }
             try (InputStream in = con.getInputStream()) {
                 ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -87,7 +102,7 @@ public final class ApiClient {
         try {
             int codigo = con.getResponseCode();
             if (codigo != 200) {
-                throw new IOException("HTTP " + codigo);
+                throw new ErrorHttp(codigo, detalleError(con, codigo));
             }
             long total = con.getContentLengthLong();
             // Buffer grande + BufferedOutputStream: escribir a un Uri de SAF
@@ -284,7 +299,32 @@ public final class ApiClient {
             }
             int codigo = con.getResponseCode();
             if (codigo < 200 || codigo >= 300) {
-                throw new IOException(detalleError(con, codigo));
+                throw new ErrorHttp(codigo, detalleError(con, codigo));
+            }
+            try (InputStream in = con.getInputStream()) {
+                return leerTodo(in);
+            }
+        } finally {
+            con.disconnect();
+        }
+    }
+
+    /** POST con cuerpo JSON (servicio de partidas) que devuelve el cuerpo de la respuesta. */
+    public static String postJson(String baseUrl, String token, String ruta, JSONObject datos) throws IOException {
+        HttpURLConnection con = (HttpURLConnection) new URL(baseUrl + ruta).openConnection();
+        ponerClave(con, token);
+        con.setRequestMethod("POST");
+        con.setDoOutput(true);
+        con.setConnectTimeout(8000);
+        con.setReadTimeout(30000);
+        con.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+        try {
+            try (OutputStream out = con.getOutputStream()) {
+                out.write(datos.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            int codigo = con.getResponseCode();
+            if (codigo < 200 || codigo >= 300) {
+                throw new ErrorHttp(codigo, detalleError(con, codigo));
             }
             try (InputStream in = con.getInputStream()) {
                 return leerTodo(in);
@@ -326,7 +366,7 @@ public final class ApiClient {
             }
             int codigo = con.getResponseCode();
             if (codigo < 200 || codigo >= 300) {
-                throw new IOException(detalleError(con, codigo));
+                throw new ErrorHttp(codigo, detalleError(con, codigo));
             }
         } finally {
             con.disconnect();
