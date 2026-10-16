@@ -99,6 +99,26 @@ Límite conocido: los romhacks conservan el código del juego base (todos los
 hacks de Rojo Fuego son `gba:BPRE`), así que la cabecera no distingue un
 hack de otro sobre la misma base.
 
+### Verificación de volcados (No-Intro / Redump)
+
+`verificacion.py` comprueba cada juego (su versión actual) contra las bases de
+volcados buenos que usa RetroArch: No-Intro (GB, GBC, GBA, N64) y Redump
+(PS1, PS2, PSP, GameCube). Las descarga de
+[libretro-database](https://github.com/libretro/libretro-database)
+(CC-BY-SA 4.0) a `/datos/dats` y las renueva cada 14 días. Se calcula el SHA-1
+como en esas bases (el ROM de dentro del .zip, N64 en orden .z64, cada pista en
+PS1). En el gestor se ve un distintivo en la tarjeta y el detalle en *Editar*:
+
+- **✔ verificado**: coincide con un volcado oficial (con su nombre).
+- **⚠ dudoso**: disco con el mismo número de serie y el MISMO tamaño que el
+  oficial pero otro contenido: datos alterados (disco dañado o imagen
+  modificada). Suele no arrancar (pasó con Ratchet & Clank 3).
+- **otro volcado**: mismo número de serie, otro tamaño (otro programa u otro
+  corte de pistas, frecuente en PS1): normalmente funciona.
+- **desconocido**: no está en la base (romhacks, traducciones, homebrew).
+
+Es solo un aviso: nunca impide subir ni actualizar.
+
 ### Confianza y linaje entre librerías
 
 - El **índice** guarda una **confianza** (0-100) por librería que pone SOLO
