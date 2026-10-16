@@ -20,12 +20,11 @@ Nunca impide instalar ni desinstalar: los fallos van al registro.
 """
 
 import os
-import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import api, catalogo, plataforma
+from . import api, catalogo, partidas, plataforma
 from .ajustes import carpeta_datos
 
 TOLERANCIA = 2.0
@@ -154,41 +153,25 @@ def entradas_de(ajustes, sistema: str, fichero: str, remotos: dict) -> list[Entr
     return list(lista.values())
 
 
-# ---------------- servidor ----------------
-
-def registrar(ajustes, nombre: str = "") -> None:
-    """Da de alta esta consola en el servidor (idempotente)."""
-    r = api.post_formulario(api.url_de(ajustes["url"], "consola_registrar"), ajustes["clave"],
-                            {"android_id": ajustes["credencial"], "nombre": nombre or _nombre_maquina()})
-    ajustes.guardar_cuenta(r["identificador"], r["nombre"])
-
-
-def _nombre_maquina() -> str:
-    import platform as p
-    return (p.node() or ("PC" if sys.platform == "win32" else "Linux"))[:40]
-
+# ---------------- servicio de partidas ----------------
 
 def _indice(ajustes) -> dict[str, float]:
-    filas = api.get_json(api.url_de(ajustes["url"], "guardado2_indice", **ajustes.identidad()), ajustes["clave"])
-    return {f"{f['sistema']}/{f['clave']}/{f['nombre_fichero']}": float(f["mtime"]) for f in filas}
+    return {f"{f['sistema']}/{f['clave']}/{f['nombre_fichero']}": float(f["mtime"]) for f in partidas.indice(ajustes)}
 
 
 def _sincronizar_entrada(ajustes, e: Entrada, remoto: float | None) -> int:
     local = e.local.stat().st_mtime if e.local.is_file() else 0
     remoto = remoto or 0
     if local and local > remoto + TOLERANCIA:
-        api.post_formulario(api.url_de(ajustes["url"], "guardado2_subir"), ajustes["clave"],
-                            {**ajustes.identidad(), "sistema": e.sistema, "clave": e.clave,
-                             "nombre_fichero": e.nombre, "mtime_dispositivo": str(local)},
-                            (e.nombre, str(e.local)))
+        partidas.subir(ajustes, {"sistema": e.sistema, "clave": e.clave, "nombre_fichero": e.nombre,
+                                 "mtime_dispositivo": str(local)}, e.nombre, str(e.local))
         log(f"subido {e.id}")
         return 1
     if remoto and remoto > local + TOLERANCIA:
         e.local.parent.mkdir(parents=True, exist_ok=True)
         parcial = e.local.with_name(e.local.name + ".bajando")
         parcial.unlink(missing_ok=True)
-        api.descargar(api.url_de(ajustes["url"], "guardado2_bajar", **ajustes.identidad(), sistema=e.sistema,
-                                 clave=e.clave, nombre_fichero=e.nombre), str(parcial), ajustes["clave"])
+        partidas.bajar(ajustes, e.sistema, e.clave, e.nombre, str(parcial))
         os.replace(parcial, e.local)
         os.utime(e.local, (remoto, remoto))
         log(f"bajado {e.id}")

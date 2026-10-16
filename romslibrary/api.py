@@ -67,7 +67,8 @@ def _abrir(url: str, clave: str | None = None, datos: bytes | None = None, cabec
         return urllib.request.urlopen(req, timeout=timeout, context=_SSL)
     except urllib.error.HTTPError as e:
         try:
-            mensaje = json.loads(e.read().decode("utf-8", "replace")).get("message") or ""
+            cuerpo = json.loads(e.read().decode("utf-8", "replace"))
+            mensaje = cuerpo.get("message") or cuerpo.get("detail") or ""
         except Exception:  # noqa: BLE001
             mensaje = ""
         raise ErrorApi(mensaje or f"HTTP {e.code}", e.code) from None
@@ -75,12 +76,23 @@ def _abrir(url: str, clave: str | None = None, datos: bytes | None = None, cabec
         raise ErrorApi(f"Sin conexión con {urllib.parse.urlparse(url).hostname}: {getattr(e, 'reason', e)}") from None
 
 
-def get_json(url: str, clave: str | None = None, timeout: float = 20):
-    with _abrir(url, clave, timeout=timeout) as r:
+def consulta(**params) -> str:
+    return urllib.parse.urlencode(params)
+
+
+def get_json(url: str, clave: str | None = None, timeout: float = 20, cabeceras: dict | None = None):
+    with _abrir(url, clave, cabeceras=cabeceras, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
-def post_formulario(url: str, clave: str | None, campos: dict, fichero: tuple[str, str] | None = None):
+def post_json(url: str, datos: dict, cabeceras: dict | None = None):
+    with _abrir(url, None, json.dumps(datos).encode(), {"Content-Type": "application/json", **(cabeceras or {})},
+                timeout=30) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def post_formulario(url: str, clave: str | None, campos: dict, fichero: tuple[str, str] | None = None,
+                    cabeceras: dict | None = None):
     """POST multipart. fichero = (nombre, ruta local)."""
     limite = uuid.uuid4().hex
     partes = []
@@ -93,19 +105,20 @@ def post_formulario(url: str, clave: str | None, campos: dict, fichero: tuple[st
         partes.append(f'--{limite}\r\nContent-Disposition: form-data; name="fichero"; filename="{nombre}"\r\n'
                       f'Content-Type: application/octet-stream\r\n\r\n'.encode() + contenido + b"\r\n")
     cuerpo = b"".join(partes) + f"--{limite}--\r\n".encode()
-    with _abrir(url, clave, cuerpo, {"Content-Type": f"multipart/form-data; boundary={limite}"}, timeout=120) as r:
+    with _abrir(url, clave, cuerpo, {"Content-Type": f"multipart/form-data; boundary={limite}", **(cabeceras or {})},
+                timeout=120) as r:
         texto = r.read().decode("utf-8")
         return json.loads(texto) if texto else None
 
 
 def descargar(url: str, destino: str, clave: str | None = None, progreso=None, cancelado=None,
-              reintentos: int = 6) -> None:
+              reintentos: int = 6, cabeceras: dict | None = None) -> None:
     """Descarga `url` a `destino` reanudando tras cada corte. progreso(hecho, total)."""
     espera = 2
     for intento in range(reintentos + 1):
         hecho = os.path.getsize(destino) if os.path.exists(destino) else 0
         try:
-            cab = {"Range": f"bytes={hecho}-"} if hecho else {}
+            cab = {**(cabeceras or {}), **({"Range": f"bytes={hecho}-"} if hecho else {})}
             with _abrir(url, clave, cabeceras=cab, timeout=60) as r:
                 if hecho and r.status != 206:
                     hecho = 0                              # el servidor no reanuda: desde cero

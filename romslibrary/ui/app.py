@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pygame
 
-from .. import VERSION, actualizar_roms, api, autoactualizar, catalogo, guardados, instalador, plataforma
+from .. import VERSION, actualizar_roms, api, autoactualizar, catalogo, guardados, instalador, partidas, plataforma
 from ..ajustes import Ajustes, carpeta_datos
 from . import tema
 from .dialogos import Confirmar, Lista, Mensaje, SelectorCarpeta, Teclado
@@ -87,8 +87,9 @@ class App:
         ROMs con versión nueva y versión nueva de la app."""
         try:
             if not self.ajustes.identificador:
-                guardados.registrar(self.ajustes)
-                self.aviso(f"Consola registrada: {self.ajustes.nombre_consola} ({self.ajustes.identificador})", tema.ACENTO)
+                partidas.recuperar(self.ajustes)
+                self.aviso(f"Consola: {self.ajustes.nombre_consola} ({self.ajustes.identificador})", tema.ACENTO)
+            self._avisar_solicitudes()
         except (api.ErrorApi, KeyError, TypeError) as e:
             self.aviso(f"No se pudo registrar la consola: {e}", tema.AVISO)
         self.sincronizar_partidas(silencioso=True)
@@ -272,12 +273,78 @@ class App:
 
     def abrir_menu(self) -> None:
         opciones = [("Sincronizar partidas ahora", lambda: self._en_hilo(self.sincronizar_partidas)),
+                    ("Sincronizar con otras consolas", lambda: self._en_hilo(self._abrir_consolas)),
                     ("Buscar versiones nuevas de los ROMs", lambda: self._en_hilo(self._buscar_roms)),
                     ("Librería: " + LIBRERIAS[self.libreria_idx][1], self._cambiar_libreria),
                     ("Ajustes", self.abrir_ajustes),
                     (f"Acerca de (versión {VERSION})", self._acerca_de),
                     ("Salir", self._pedir_salir)]
         self.dialogos.append(Lista("Menú", [o[0] for o in opciones], lambda i: opciones[i][1]()))
+
+    # ---------------- vincular consolas (servicio de partidas) ----------------
+
+    def _avisar_solicitudes(self) -> None:
+        """Al arrancar: si otra consola ha pedido vincularse, se pregunta (nunca se acepta sola)."""
+        try:
+            recibidas = partidas.estado(self.ajustes)["solicitudes_recibidas"]
+        except api.ErrorApi:
+            return
+        if recibidas:
+            self._preguntar_solicitud(recibidas[0])
+
+    def _preguntar_solicitud(self, s: dict) -> None:
+        respuestas = [lambda: self._en_hilo(self._responder, s, True),
+                      lambda: self._en_hilo(self._responder, s, False), lambda: None]
+        self.dialogos.append(Lista(
+            "Solicitud de sincronización", ["Aceptar", "Rechazar", "Luego"], lambda i: respuestas[i](),
+            detalle=f"{s['nombre']} ({s['identificador']}) quiere sincronizar sus partidas con esta consola. "
+                    "Si aceptas, las dos compartirán las mismas partidas (se queda la más reciente).", inicial=2))
+
+    def _responder(self, s: dict, aceptar: bool) -> None:
+        try:
+            partidas.accion(self.ajustes, "responder", solicitud=s["solicitud"], aceptar=aceptar)
+            self.aviso(f"Sincronizada con {s['nombre']}" if aceptar else "Solicitud rechazada", tema.ACENTO)
+            if aceptar:
+                self.sincronizar_partidas()
+        except api.ErrorApi as e:
+            self.aviso(f"Error: {e}", tema.ERROR)
+
+    def _abrir_consolas(self) -> None:
+        try:
+            if not self.ajustes.identificador:
+                partidas.recuperar(self.ajustes)
+            e = partidas.estado(self.ajustes)
+        except api.ErrorApi as ex:
+            self.aviso(f"Error: {ex}", tema.ERROR)
+            return
+        opciones = [("Vincular con otra consola…", lambda: self.dialogos.append(
+            Teclado("Identificador de la otra consola (12345-67890)", "", self._solicitar)))]
+        for s in e["solicitudes_recibidas"]:
+            opciones.append((f"Solicitud de {s['nombre']} ({s['identificador']})", lambda s=s: self._preguntar_solicitud(s)))
+        for s in e["solicitudes_enviadas"]:
+            opciones.append((f"Enviada a {s['nombre']}: cancelar", lambda s=s: self._en_hilo(
+                self._hacer, "cancelar", {"solicitud": s["solicitud"]}, "Solicitud cancelada")))
+        for c in e["sincronizadas"]:
+            opciones.append((f"Sincronizada: {c['nombre']} ({c['identificador']}) — desvincular", lambda c=c: self.dialogos.append(
+                Confirmar("Desvincular", f"¿Dejar de compartir partidas con {c['nombre']}? Se queda con una copia.",
+                          "Desvincular", lambda: self._en_hilo(self._hacer, "desincronizar", {"otra": c["identificador"]},
+                                                              f"Desvinculada {c['nombre']}")))))
+        for c in e["bloqueadas"]:
+            opciones.append((f"Bloqueada: {c['nombre']} — desbloquear", lambda c=c: self._en_hilo(
+                self._hacer, "desbloquear", {"otra": c["identificador"]}, f"Desbloqueada {c['nombre']}")))
+        self.dialogos.append(Lista(f"Esta consola: {self.ajustes.nombre_consola} · {self.ajustes.identificador}",
+                                   [o[0] for o in opciones], lambda i: opciones[i][1]()))
+
+    def _solicitar(self, ident: str) -> None:
+        self._en_hilo(self._hacer, "solicitar", {"otra": ident.strip()},
+                      "Solicitud enviada: si el identificador es correcto, la otra consola tendrá que aceptarla")
+
+    def _hacer(self, op: str, datos: dict, mensaje: str) -> None:
+        try:
+            partidas.accion(self.ajustes, op, **datos)
+            self.aviso(mensaje, tema.ACENTO)
+        except api.ErrorApi as e:
+            self.aviso(f"Error: {e}", tema.ERROR)
 
     def _buscar_roms(self) -> None:
         hechos = actualizar_roms.comprobar(self.ajustes, lambda t: self.aviso(t, tema.ACENTO))
@@ -342,11 +409,9 @@ class App:
         def hacer():
             try:
                 if self.ajustes.identificador:
-                    api.post_formulario(api.url_de(self.ajustes["url"], "consola_accion", op="renombrar"),
-                                        self.ajustes["clave"], {**self.ajustes.identidad(), "nombre": nombre.strip()})
-                    self.ajustes.guardar_cuenta(self.ajustes.identificador, nombre.strip())
+                    partidas.renombrar(self.ajustes, nombre)
                 else:
-                    guardados.registrar(self.ajustes, nombre.strip())
+                    partidas.registrar(self.ajustes, nombre)
                 self.aviso(f"Nombre guardado: {self.ajustes.nombre_consola}", tema.ACENTO)
             except (api.ErrorApi, KeyError, TypeError) as e:
                 self.aviso(f"No se pudo cambiar el nombre: {e}", tema.ERROR)

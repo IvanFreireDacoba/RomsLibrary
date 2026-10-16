@@ -4,8 +4,10 @@ datos del usuario (~/.config/romslibrary o %APPDATA%\\RomsLibrary); en las
 consolas portátiles, junto a la app si la carpeta personal es de solo lectura.
 
 La "credencial" de la consola (lo que en Android es el ANDROID_ID) es un
-secreto aleatorio que se genera la primera vez y nunca se enseña: junto con
-el identificador público (XXXXX-XXXXX) autoriza a subir y bajar partidas.
+secreto aleatorio que se genera la primera vez y nunca se enseña: es la
+contraseña de la consola en el servicio de partidas (ver partidas.py), que
+le da su identificador público (XXXXX-XXXXX), el mismo sea cual sea la
+librería.
 """
 
 import json
@@ -17,6 +19,7 @@ from pathlib import Path
 from . import plataforma
 
 URL_POR_DEFECTO = "https://sund.es"
+PARTIDAS_POR_DEFECTO = "https://sund.es"
 ORIGEN_ACTUALIZACIONES = "https://sund.es"
 
 
@@ -50,8 +53,9 @@ class Ajustes:
             cambiado = True
         for clave, valor in (("url", URL_POR_DEFECTO), ("clave", ""), ("roms", self.plataforma.roms),
                              ("partidas", self.plataforma.carpeta_partidas), ("carpetas", {}),
-                             ("todas_las_consolas", False), ("identificadores", {}), ("nombres", {}),
-                             ("vista", "lista")):
+                             ("todas_las_consolas", False), ("vista", "lista"),
+                             ("url_partidas", PARTIDAS_POR_DEFECTO), ("identificador", None),
+                             ("nombre_consola", ""), ("token_partidas", None)):
             if clave not in self.d:
                 self.d[clave] = valor
                 cambiado = True
@@ -70,23 +74,25 @@ class Ajustes:
         self.d[k] = v
         self.guardar()
 
-    # ---------- cuenta en el servidor actual ----------
+    # ---------- consola en el servicio de partidas ----------
 
     @property
     def identificador(self) -> str | None:
-        return self.d["identificadores"].get(self.d["url"])
+        return self.d["identificador"]
 
     @property
     def nombre_consola(self) -> str:
-        return self.d["nombres"].get(self.d["url"], "")
+        return self.d["nombre_consola"]
 
-    def guardar_cuenta(self, identificador: str, nombre: str) -> None:
-        self.d["identificadores"][self.d["url"]] = identificador
-        self.d["nombres"][self.d["url"]] = nombre
+    def guardar_cuenta(self, identificador: str, nombre: str, token: str) -> None:
+        self.d.update(identificador=identificador, nombre_consola=nombre, token_partidas=token)
+        self.d.pop("identificadores", None)      # identidad por librería de la versión 1.0.x
+        self.d.pop("nombres", None)
         self.guardar()
 
-    def identidad(self) -> dict:
-        return {"android_id": self.d["credencial"], "identificador": self.identificador or ""}
+    def nombre_antiguo(self) -> str:
+        """Nombre que tenía la consola en la versión 1.0.x (uno por librería)."""
+        return next(iter((self.d.get("nombres") or {}).values()), "")
 
     # ---------- carpetas ----------
 
