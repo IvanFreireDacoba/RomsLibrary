@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image
 from starlette.background import BackgroundTask
 
+import accesos
 import ajustes
 import config
 
@@ -1043,6 +1044,7 @@ federacion.inicializar()
 versiones.inicializar()
 externos.inicializar()
 fichas.inicializar()
+accesos.inicializar()
 verificacion.inicializar()
 app.include_router(api_app.router)
 app.include_router(federacion.router)

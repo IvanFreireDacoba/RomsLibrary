@@ -2,9 +2,9 @@
 Código de juego leído de la CABECERA del propio ROM (nunca del nombre del
 fichero, que lo pone quien sube). Sirve para validar las actualizaciones: una
 versión nueva solo se acepta si su código coincide con el del juego que
-sustituye. Así no se puede «actualizar» Pokémon Esmeralda con un Mario.
+sustituye. Así no se puede «actualizar» un juego con otro distinto.
 
-    codigo(ruta) -> ("gba:BPEE", "POKEMON EMER") | None
+    codigo(ruta) -> ("gba:ABCD", "TITULO INTERNO") | None
 
 None = formato sin cabecera legible (comprimidos: .chd, .cso, .rvz...): el
 gestor pide entonces confirmación explícita.

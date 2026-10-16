@@ -252,6 +252,14 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         .rl-clave-fila button { padding: 6px 10px; }
         .rl-card-lib { display: inline-block; margin-left: 6px; background: #2a2440; color: #c8a2ff; border-radius: 4px; padding: 1px 6px; font-size: 11px; }
         .rl-copias { flex: none; }
+        .rl-vis { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+        .rl-vis-op { display: flex; gap: 8px; align-items: flex-start; font-weight: normal; cursor: pointer; }
+        .rl-vis-op input { margin-top: 4px; flex: none; }
+        .rl-card-privado { background: #262c38; color: #b8c2d0; }
+        .rl-card-compartido { background: #1c3a24; color: #7bffb0; }
+        .rl-accesos { flex: none; margin-bottom: 8px; padding: 8px 10px; border: 1px solid #2f5f8a; border-radius: 6px; }
+        .rl-accesos:empty { display: none; }
+        .rl-accesos .rl-fila-acceso { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
         .rl-idiomas { display: flex; flex-wrap: wrap; gap: 4px 12px; }
         .rl-idiomas label { display: flex; gap: 4px; align-items: center; font-size: 0.9em; }
         .rl-card-corrupto { background: #4a1f24; color: #ff9a9a; }
@@ -791,7 +799,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                         Se juega en el dispositivo con Kirin, no con ES-DE.
                     </p>
                     <label for="rl-nombre">Nombre del fichero (con extensión)</label>
-                    <input type="text" id="rl-nombre" placeholder="ej. zelda_oot.gb">
+                    <input type="text" id="rl-nombre" placeholder="ej. mi_juego.gb">
 
                     <label>ROM</label>
                     <div class="rl-drop" id="rl-drop-rom">Arrastra el fichero aquí, o haz clic para elegirlo</div>
@@ -832,6 +840,29 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
 
                 <label>Idiomas del juego</label>
                 <div class="rl-idiomas" id="rl-idiomas"></div>
+                <label>¿Quién puede verlo?</label>
+                <div class="rl-vis" id="rl-vis">
+                    <label class="rl-vis-op"><input type="radio" name="rl-vis" value="privado" checked>
+                        <span><strong>Solo para mí</strong> (privado): solo lo ven las consolas con acceso a esta librería
+                        (su clave o una consola que hayas aceptado).</span></label>
+                    <label class="rl-vis-op"><input type="radio" name="rl-vis" value="compartido">
+                        <span><strong>Compartido</strong>: si la librería es pública lo ve cualquiera y se comparte con las
+                        otras librerías públicas.</span></label>
+                    <div class="rl-vis-compartir" style="display:none;">
+                        <select class="rl-vis-base">
+                            <option value="">¿Por qué se puede compartir?</option>
+                            <option value="homebrew">Homebrew o juego propio</option>
+                            <option value="libre">Licencia libre</option>
+                            <option value="permiso">Permiso del titular de los derechos</option>
+                            <option value="fangame">Fan game original (sin código de juegos comerciales)</option>
+                            <option value="autor">Enlace a la web de su autor</option>
+                        </select>
+                        <input type="text" class="rl-vis-detalle" placeholder="Detalle" style="margin-top:4px; display:none;">
+                        <p class="rl-ayuda">Comparte solo lo que tengas derecho a distribuir. Una copia de seguridad de tu
+                            original es solo para ti; un ROM hack ya parcheado contiene el juego original (comparte el
+                            parche o el enlace de su autor). Lo que declares aquí queda registrado.</p>
+                    </div>
+                </div>
                 <label for="rl-titulo">Es otro idioma de... (opcional)</label>
                 <input type="text" id="rl-titulo" list="rl-titulos-subida" placeholder="Título de un juego ya subido en esta consola">
                 <datalist id="rl-titulos-subida"></datalist>
@@ -877,6 +908,11 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                         <option value="posibles">Posibles corruptos (automático)</option>
                         <option value="limpios">Sin marca de corrupto</option>
                     </select>
+                    <select id="rl-filtro-visibilidad">
+                        <option value="">Compartidos y privados</option>
+                        <option value="compartido">Solo compartidos</option>
+                        <option value="privado">Solo privados (solo para mí)</option>
+                    </select>
                     <select id="rl-filtro-idioma">
                         <option value="">Todos los idiomas</option>
                         <option value="es">Español</option>
@@ -890,6 +926,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     </select>
                     <input type="text" id="rl-filtro-nombre" placeholder="Buscar por nombre...">
                 </div>
+                <div id="rl-accesos" class="rl-accesos"></div>
                 <div id="rl-copias" class="rl-copias"></div>
                 <div id="rl-corruptos" class="rl-corruptos"></div>
 
@@ -925,6 +962,30 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         <div class="rl-idiomas" id="rl-edit-idiomas"></div>
         <label for="rl-edit-titulo">Título común (junta las versiones en otros idiomas)</label>
         <input type="text" id="rl-edit-titulo" list="rl-titulos">
+
+        <label>¿Quién puede verlo?</label>
+                <div class="rl-vis" id="rl-edit-vis">
+                    <label class="rl-vis-op"><input type="radio" name="rl-edit-vis" value="privado" checked>
+                        <span><strong>Solo para mí</strong> (privado): solo lo ven las consolas con acceso a esta librería
+                        (su clave o una consola que hayas aceptado).</span></label>
+                    <label class="rl-vis-op"><input type="radio" name="rl-edit-vis" value="compartido">
+                        <span><strong>Compartido</strong>: si la librería es pública lo ve cualquiera y se comparte con las
+                        otras librerías públicas.</span></label>
+                    <div class="rl-vis-compartir" style="display:none;">
+                        <select class="rl-vis-base">
+                            <option value="">¿Por qué se puede compartir?</option>
+                            <option value="homebrew">Homebrew o juego propio</option>
+                            <option value="libre">Licencia libre</option>
+                            <option value="permiso">Permiso del titular de los derechos</option>
+                            <option value="fangame">Fan game original (sin código de juegos comerciales)</option>
+                            <option value="autor">Enlace a la web de su autor</option>
+                        </select>
+                        <input type="text" class="rl-vis-detalle" placeholder="Detalle" style="margin-top:4px; display:none;">
+                        <p class="rl-ayuda">Comparte solo lo que tengas derecho a distribuir. Una copia de seguridad de tu
+                            original es solo para ti; un ROM hack ya parcheado contiene el juego original (comparte el
+                            parche o el enlace de su autor). Lo que declares aquí queda registrado.</p>
+                    </div>
+                </div>
 
         <label for="rl-edit-corrupto">Estado del archivo</label>
         <select id="rl-edit-corrupto">
@@ -1133,6 +1194,12 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             const coverInput = document.getElementById('rl-input-cover');
             const esGrupo = document.getElementById('rl-modo-grupo').checked;
             const tituloOtro = document.getElementById('rl-titulo').value.trim();
+            const visSubida = rlLeerVisibilidad('rl-vis');
+            if (rlErrorVisibilidad(visSubida)) {
+                msg.textContent = rlErrorVisibilidad(visSubida);
+                msg.style.color = '#ff8a8a';
+                return;
+            }
             if (tituloOtro && !rlTitulosSubida.some((t) => t.toLowerCase() === tituloOtro.toLowerCase())) {
                 msg.textContent = '«' + tituloOtro + '» no es ningún juego subido en esta consola: elige uno de la lista o déjalo vacío.';
                 msg.style.color = '#ff8a8a';
@@ -1248,6 +1315,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             if (coverInput.files.length > 0) form.append('cover', coverInput.files[0]);
             form.append('idiomas', rlLeerIdiomas('rl-idiomas'));
             form.append('titulo', document.getElementById('rl-titulo').value.trim());
+            rlAnadirVisibilidad(form, visSubida);
 
             const btn = document.getElementById('rl-confirmar');
             btn.disabled = true;
@@ -1387,6 +1455,10 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             const estado = document.getElementById('rl-filtro-estado').value;
             const idioma = document.getElementById('rl-filtro-idioma').value;
             const idiomas = j.idiomas || [];
+            const visibilidad = document.getElementById('rl-filtro-visibilidad').value;
+            const compartido = j.origen ? true : !!j.compartido;      // lo de otras librerías siempre es compartido
+            if (visibilidad === 'compartido' && !compartido) return false;
+            if (visibilidad === 'privado' && compartido) return false;
             if (estado === 'corruptos' && !j.corrupto) return false;
             if (estado === 'confirmados' && !(j.corrupto && !j.corruptoAutomatico)) return false;
             if (estado === 'posibles' && !(j.corrupto && j.corruptoAutomatico)) return false;
@@ -1473,6 +1545,9 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                         (juego.version > 1 ? '<span class="rl-card-lib" title="Versión actual (ver Editar)">v' + (+juego.version) + '</span>' : '') +
                         (juego.fuenteExterna ? '<span class="rl-card-lib" title="Se descarga desde la web del autor">' + (juego.fuenteEstado === 'cambiado' ? '⚠ enlace cambiado' : juego.fuenteEstado === 'caido' ? '⚠ enlace caído' : 'enlace del autor') + '</span>' : '') +
                         (juego.verificacion && juego.verificacion.estado === 'verificado' ? '<span class="rl-card-lib" title="' + rlEscapar(juego.verificacion.nombre) + '">✔ ' + rlEscapar(juego.verificacion.fuente) + '</span>' : '') +
+                        (!juego.origen ? (juego.compartido
+                            ? '<span class="rl-card-lib rl-card-compartido" title="' + rlEscapar((RL_BASES[juego.base] || '') + (juego.baseDetalle ? ': ' + juego.baseDetalle : '')) + '">compartido</span>'
+                            : '<span class="rl-card-lib rl-card-privado" title="Solo lo ven las consolas con acceso a esta librería">solo para mí</span>') : '') +
                         (juego.corrupto ? '<span class="rl-card-lib ' + (juego.corruptoAutomatico ? 'rl-card-corrupto-auto' : 'rl-card-corrupto') + '" title="' + rlEscapar(juego.motivoCorrupto + ' · ' + rlEstadoServicio(juego)) + '">' + (juego.corruptoAutomatico ? '⚠ posible archivo corrupto' : '✖ archivo corrupto') + '</span>' : '') +
                         (!juego.corrupto && juego.verificacion && juego.verificacion.estado === 'dudoso' ? '<span class="rl-card-lib" style="color:#ffb36b" title="' + rlEscapar(juego.verificacion.detalle) + '">⚠ volcado dudoso (revisado: está bien)</span>' : '') +
                         (rlEtiquetaIdiomas(juego) ? '<span class="rl-card-lib" title="Idiomas' + (juego.idiomasDeducidos ? ' (deducidos del volcado; cámbialos en Editar)' : '') + '">' + rlEscapar(rlEtiquetaIdiomas(juego)) + (juego.idiomasDeducidos ? '?' : '') + '</span>' : '') +
@@ -1546,7 +1621,8 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
 
         // ---------- Copiar un juego de otra librería a la personal ----------
         async function rlCopiarJuego(juego) {
-            const nombre = prompt('Nombre con el que se guardará en tu librería:', juego.filename);
+            const nombre = prompt('Nombre con el que se guardará en tu librería (se guardará como «Solo para mí»; '
+                + 'si luego lo compartes, hazlo solo si tienes derecho a distribuirlo):', juego.filename);
             if (!nombre) return;
             try {
                 const resp = await rlFetch('api/copiar', {
@@ -1634,6 +1710,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             document.getElementById('rl-edit-update').style.display = sePuedeActualizar ? '' : 'none';
             document.getElementById('rl-edit-update-aviso').style.display = sePuedeActualizar ? '' : 'none';
             rlPintarIdiomas('rl-edit-idiomas', juego.idiomas || []);
+            rlPonerVisibilidad('rl-edit-vis', juego);
             document.getElementById('rl-edit-titulo').value = juego.titulo || '';
             document.getElementById('rl-edit-corrupto').value = juego.corruptoAutomatico ? 'auto'
                 : juego.corrupto ? '1' : juego.corruptoDescartado ? '0' : 'auto';
@@ -1663,8 +1740,84 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         let rlFichaOriginal = '';
         function rlFichaEditada() {
             return JSON.stringify({ idiomas: rlLeerIdiomas('rl-edit-idiomas'), titulo: document.getElementById('rl-edit-titulo').value.trim(),
-                corrupto: document.getElementById('rl-edit-corrupto').value, motivo: document.getElementById('rl-edit-motivo').value.trim() });
+                corrupto: document.getElementById('rl-edit-corrupto').value, motivo: document.getElementById('rl-edit-motivo').value.trim(),
+                vis: rlLeerVisibilidad('rl-edit-vis') });
         }
+
+        // ---------- Visibilidad de cada juego (solo para mí / compartido con su base) ----------
+        const RL_BASES = { homebrew: 'Homebrew o juego propio', libre: 'Licencia libre', permiso: 'Permiso del titular',
+                           fangame: 'Fan game original', autor: 'Enlace a la web de su autor' };
+        const RL_DETALLE = { libre: 'Qué licencia (p. ej. GPL-3.0, CC BY 4.0)', permiso: 'Quién dio el permiso y cómo (p. ej. correo del autor, 2026-10)' };
+        function rlPrepararVisibilidad(id) {
+            const caja = document.getElementById(id);
+            const compartir = caja.querySelector('.rl-vis-compartir');
+            const base = caja.querySelector('.rl-vis-base');
+            const detalle = caja.querySelector('.rl-vis-detalle');
+            const actualizar = () => {
+                compartir.style.display = caja.querySelector('input:checked').value === 'compartido' ? 'block' : 'none';
+                detalle.style.display = RL_DETALLE[base.value] ? 'block' : 'none';
+                detalle.placeholder = RL_DETALLE[base.value] || '';
+            };
+            caja.querySelectorAll('input[type=radio]').forEach((r) => r.addEventListener('change', actualizar));
+            base.addEventListener('change', actualizar);
+            caja.rlActualizar = actualizar;
+        }
+        function rlLeerVisibilidad(id) {
+            const caja = document.getElementById(id);
+            return { visibilidad: caja.querySelector('input:checked').value, base: caja.querySelector('.rl-vis-base').value,
+                     base_detalle: caja.querySelector('.rl-vis-detalle').value.trim() };
+        }
+        function rlPonerVisibilidad(id, juego) {
+            const caja = document.getElementById(id);
+            caja.querySelector('input[value="' + (juego && juego.compartido ? 'compartido' : 'privado') + '"]').checked = true;
+            caja.querySelector('.rl-vis-base').value = (juego && juego.base) || '';
+            caja.querySelector('.rl-vis-detalle').value = (juego && juego.baseDetalle) || '';
+            caja.rlActualizar();
+        }
+        // Mismo control en el cliente que en el servidor: compartir exige base (y detalle si toca).
+        function rlErrorVisibilidad(v) {
+            if (v.visibilidad !== 'compartido') return '';
+            if (!v.base) return 'Para compartir un juego indica por qué se puede compartir (o déjalo «Solo para mí»).';
+            if (RL_DETALLE[v.base] && !v.base_detalle) return v.base === 'libre' ? 'Indica la licencia.' : 'Indica quién dio el permiso y cómo.';
+            return '';
+        }
+        function rlAnadirVisibilidad(form, v) {
+            form.append('visibilidad', v.visibilidad);
+            form.append('base', v.base);
+            form.append('base_detalle', v.base_detalle);
+        }
+        rlPrepararVisibilidad('rl-vis');
+        rlPrepararVisibilidad('rl-edit-vis');
+
+        // ---------- Solicitudes de acceso de consolas (ver accesos.py) ----------
+        async function rlCargarAccesos() {
+            const cont = document.getElementById('rl-accesos');
+            let lista = [];
+            try {
+                lista = (await (await rlFetch('api/accesos')).json()).data || [];
+            } catch (e) {
+                return;
+            }
+            const pendientes = lista.filter((a) => a.estado === 'pendiente');
+            const aceptadas = lista.filter((a) => a.estado === 'aceptada');
+            if (!pendientes.length && !aceptadas.length) { cont.innerHTML = ''; return; }
+            const fila = (a, botones) => '<div class="rl-fila-acceso"><span>' + rlEscapar(a.nombre) + (a.consola ? ' · ' + rlEscapar(a.consola) : '')
+                + ' <span class="rl-ayuda">(' + new Date((a.decidida || a.creada) * 1000).toLocaleDateString() + ')</span></span>'
+                + botones.map(([accion, texto]) => '<button class="rl-btn rl-btn-secundario" data-id="' + a.id + '" data-accion="' + accion + '">' + texto + '</button>').join('') + '</div>';
+            cont.innerHTML = (pendientes.length ? '<strong>Consolas que piden acceso a toda la librería</strong>'
+                + '<p class="rl-ayuda">Al aceptar, esa consola verá y descargará también los juegos «solo para mí». Da acceso solo a tus consolas: dar a otras personas juegos que no tienes derecho a compartir es distribuirlos, aunque sean pocas.</p>'
+                + pendientes.map((a) => fila(a, [['aceptar', 'Aceptar'], ['rechazar', 'Rechazar']])).join('') : '')
+                + (aceptadas.length ? '<details' + (pendientes.length ? '' : ' open') + '><summary>Consolas con acceso (' + aceptadas.length + ')</summary>'
+                + aceptadas.map((a) => fila(a, [['revocar', 'Quitar acceso']])).join('') + '</details>' : '');
+            cont.querySelectorAll('button[data-id]').forEach((b) => b.addEventListener('click', async () => {
+                if (b.dataset.accion === 'revocar' && !confirm('¿Quitar el acceso a esta consola?')) return;
+                await rlFetch('api/accesos', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({ id: Number(b.dataset.id), accion: b.dataset.accion }) });
+                rlCargarAccesos();
+            }));
+        }
+        rlCargarAccesos();
+        setInterval(rlCargarAccesos, 60000);
 
         // ---------- Versiones (historial + "Añadir update") ----------
         async function rlCargarVersiones(juego) {
@@ -1834,6 +1987,11 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             const cambiarCaratula = coverInput.files.length > 0;
             const ficha = rlFichaEditada();
             const cambiarFicha = ficha !== rlFichaOriginal;
+            if (cambiarFicha && rlErrorVisibilidad(JSON.parse(ficha).vis)) {
+                msg.textContent = rlErrorVisibilidad(JSON.parse(ficha).vis);
+                msg.style.color = '#ff8a8a';
+                return;
+            }
             if (!renombrar && !cambiarCaratula && !cambiarFicha) {
                 rlDialogo.close();
                 return;
@@ -1866,6 +2024,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     form.append('titulo', datos.titulo);
                     form.append('corrupto', datos.corrupto);
                     form.append('motivo', datos.motivo);
+                    rlAnadirVisibilidad(form, datos.vis);
                     const data = await (await rlFetch('api/juegos', { method: 'POST', body: form })).json();
                     if (!data.success) throw new Error(data.message);
                 }
@@ -1897,7 +2056,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         });
 
         async function rlBorrarJuego(sistema, nombre) {
-            if (!confirm('¿Borrar "' + nombre + '" de la librería de jarjar? Esta acción no se puede deshacer.')) return;
+            if (!confirm('¿Borrar "' + nombre + '" de la librería? Esta acción no se puede deshacer.')) return;
             try {
                 const resp = await rlFetch('api/juegos', {
                     method: 'DELETE',
@@ -2059,6 +2218,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         document.getElementById('rl-filtro-libreria').addEventListener('change', rlCargarJuegos);
         document.getElementById('rl-filtro-estado').addEventListener('change', rlCargarJuegos);
         document.getElementById('rl-filtro-idioma').addEventListener('change', rlCargarJuegos);
+        document.getElementById('rl-filtro-visibilidad').addEventListener('change', rlCargarJuegos);
         document.getElementById('rl-filtro-sistema').addEventListener('change', rlCargarJuegos);
         document.getElementById('rl-filtro-nombre').addEventListener('input', () => {
             clearTimeout(window.rlFiltroTimeout);

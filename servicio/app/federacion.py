@@ -365,10 +365,13 @@ async def catalogo_de(servicio: dict) -> list[dict]:
     return juegos
 
 
-def juegos_propios(sistema: str | None = None, texto: str | None = None, servir: bool = True) -> list[dict]:
+def juegos_propios(sistema: str | None = None, texto: str | None = None, servir: bool = True,
+                   completo: bool = True) -> list[dict]:
     """servir=True: como lo ven las apps y las otras librerías (lo confirmado
     como corrupto se cambia por su versión limpia anterior o no se puede
-    descargar). servir=False: el estado real, para el gestor."""
+    descargar). servir=False: el estado real, para el gestor.
+    completo=False: solo los COMPARTIDOS (quien no tiene acceso a la librería,
+    y siempre las otras librerías y el índice)."""
     import main as nucleo
     juegos = nucleo.listar_juegos_galeria(nucleo.PETICION_INTERNA, nucleo.TOKEN_SISTEMA, system=sistema, q=texto)
     cadenas = versiones.cadenas_propias()
@@ -408,7 +411,15 @@ def juegos_propios(sistema: str | None = None, texto: str | None = None, servir:
                          shaEnlace=None)
             elif servir:
                 j.update(descargable=False, fuenteExterna=None, shaEnlace=None)
+    if not completo:
+        juegos = [j for j in juegos if j["compartido"]]
     return juegos
+
+
+def es_compartido(sistema: str, nombre: str) -> bool:
+    import main as nucleo
+    ruta = f"{nucleo.nombre_seguro(sistema)}/{nucleo.nombre_seguro(nombre)}"
+    return bool((fichas.todas().get(ruta) or {}).get("compartido"))
 
 
 def servir_descarga(sistema: str, nombre: str):
@@ -432,10 +443,10 @@ def fichero_limpio(sistema: str, nombre: str) -> Path | None:
     return limpia["fichero"]
 
 
-async def red(servir: bool = True) -> tuple[list[dict], list[dict], list[list[dict]], linaje.Linaje]:
+async def red(servir: bool = True, completo: bool = True) -> tuple[list[dict], list[dict], list[list[dict]], linaje.Linaje]:
     """Juegos propios, librerías públicas, sus catálogos y el linaje de
     versiones que sale de todo ello (ver linaje.py)."""
-    propios = juegos_propios(servir=servir)
+    propios = juegos_propios(servir=servir, completo=completo)
     servicios = await otras_librerias()
     catalogos = await asyncio.gather(*(catalogo_de(s) for s in servicios))
     lin = linaje.Linaje()
@@ -451,13 +462,14 @@ async def red(servir: bool = True) -> tuple[list[dict], list[dict], list[list[di
     return propios, servicios, catalogos, lin
 
 
-async def juegos_listado(sistema: str | None, texto: str | None, libreria: str, servir: bool = True) -> list[dict]:
+async def juegos_listado(sistema: str | None, texto: str | None, libreria: str, servir: bool = True,
+                         completo: bool = True) -> list[dict]:
     """libreria: "personal" | "otras" | "todas". Sin duplicados por SHA y,
     de otras librerías, sin versiones que se sabe que están superadas."""
     if libreria == "personal":
-        return juegos_propios(sistema, texto, servir)
-    todos, servicios, catalogos, lin = await red(servir)
-    propios = juegos_propios(sistema, texto, servir) if libreria == "todas" else []
+        return juegos_propios(sistema, texto, servir, completo)
+    todos, servicios, catalogos, lin = await red(servir, completo)
+    propios = juegos_propios(sistema, texto, servir, completo) if libreria == "todas" else []
     for j in propios:
         # Una librería de confianza tiene una versión más nueva de este juego.
         j["hayVersionNueva"] = bool(j["sha"] and lin.superada(j["sha"]))
@@ -480,10 +492,10 @@ async def juegos_listado(sistema: str | None, texto: str | None, libreria: str, 
     return propios + otros
 
 
-async def obsoletas_para_app() -> list[dict]:
+async def obsoletas_para_app(completo: bool) -> list[dict]:
     """Versiones superadas (propias y de librerías de confianza) y dónde está
     la actual de cada una: la app actualiza con esto lo que tenga instalado."""
-    propios, servicios, catalogos, lin = await red()
+    propios, servicios, catalogos, lin = await red(completo=completo)
     donde: dict[str, dict] = {}       # sha actual -> dónde descargarlo
     tamanos: dict[str, int] = {}
     for j in propios:
@@ -518,10 +530,10 @@ async def obsoletas_para_app() -> list[dict]:
     return res
 
 
-async def listar_para_app(sistema: str | None, texto: str | None, libreria: str) -> list[dict]:
+async def listar_para_app(sistema: str | None, texto: str | None, libreria: str, completo: bool) -> list[dict]:
     if libreria not in ("personal", "otras", "todas"):
         libreria = "personal"
-    return await juegos_listado(sistema, texto, libreria)
+    return await juegos_listado(sistema, texto, libreria, completo=completo)
 
 
 # ---------- Juegos de otra librería: siempre directos desde su origen ----------
@@ -585,8 +597,9 @@ async def catalogo(request: Request):
     await _exigir_ticket(request)
     return [{k: j[k] for k in ("system", "filename", "sizeBytes", "coverUrl", "esGrupo", "tipoGrupo", "roles", "sha",
                                "version", "anteriores", "codigo", "fuenteExterna", "shaEnlace", "paginaAutor",
-                               "titulo", "idiomas", "corrupto", "motivoCorrupto", "corruptoAutomatico")}
-            for j in juegos_propios() if j["descargable"]]
+                               "titulo", "idiomas", "corrupto", "motivoCorrupto", "corruptoAutomatico",
+                               "base", "baseDetalle")}
+            for j in juegos_propios(completo=False) if j["descargable"]]
 
 
 @router.get("/juego")
@@ -598,6 +611,9 @@ async def juego(request: Request):
     q = request.query_params
     I, T = nucleo.PETICION_INTERNA, nucleo.TOKEN_SISTEMA
     accion = q.get("accion")
+    if accion in ("descargar", "caratula", "grupo_ficheros", "grupo_fichero") \
+            and not es_compartido(q["system"], q["grupo"] if accion.startswith("grupo") else q["filename"]):
+        raise HTTPException(status_code=404, detail="Juego no encontrado.")   # solo lo compartido sale de aquí
     if accion == "descargar":
         return servir_descarga(q["system"], q["filename"])
     if accion in ("grupo_ficheros", "grupo_fichero"):

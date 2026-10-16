@@ -6,7 +6,11 @@ en sund.es por delante de jarjar), así que una única APK sirve para
 cualquier servicio RomsLibrary: solo cambia la URL y la clave de acceso.
 
 - "version" y "apk" son públicas (la app no es un dato sensible).
-- Librería PÚBLICA (ajuste "publico"): el resto también es libre, sin clave.
+- Librería PÚBLICA (ajuste "publico"): sin clave se ven y descargan SOLO los
+  juegos COMPARTIDOS (fichas.py); los privados, como en una privada.
+- Acceso completo (también a los privados): la clave de la librería o el
+  token de una consola que el administrador ha aceptado (accesos.py). La app
+  lo pide con «Solicitar acceso» (solicitar_acceso / acceso_estado, públicas).
 - Las partidas y la identidad de las consolas NO van aquí: son del servicio
   de partidas (partidas.py), aparte de cualquier librería.
 - Librería privada: todo lo demás exige la clave de acceso del servicio
@@ -23,6 +27,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
+import accesos
 import ajustes
 import config
 import federacion
@@ -31,13 +36,16 @@ import main as nucleo
 router = APIRouter()
 
 RUTA = "/APIs/RomLibraryApp"
-ACCIONES_PUBLICAS = {"version", "apk", "cliente_version", "cliente"}
+ACCIONES_PUBLICAS = {"version", "apk", "cliente_version", "cliente", "solicitar_acceso", "acceso_estado"}
 
 
 def _clave_valida(request: Request) -> bool:
+    """Acceso completo: la clave de la librería o una consola aceptada."""
     token = request.query_params.get("token") or request.headers.get("x-app-token") or ""
     esperado = ajustes.leer("clave_app")
-    return bool(esperado) and bool(token) and secrets.compare_digest(token, esperado)
+    if esperado and token and secrets.compare_digest(token, esperado):
+        return True
+    return accesos.valido(request.headers.get("x-app-token") or "")
 
 
 def _acceso_permitido(request: Request, accion: str) -> bool:
@@ -72,15 +80,31 @@ def _sin_intermediario() -> JSONResponse:
                                                       "se descargan directamente de ellas."}, status_code=410)
 
 
-@router.get(RUTA)
+@router.api_route(RUTA, methods=["GET", "POST"])
 async def api_app(request: Request):
     q = request.query_params
     accion = q.get("accion", "juegos")
+    if request.method == "POST":
+        if accion != "solicitar_acceso":
+            raise HTTPException(status_code=404, detail="Acción desconocida.")
+        datos = await request.json()
+        ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "?")
+        try:
+            return accesos.solicitar(datos.get("token"), datos.get("nombre"), datos.get("consola"), ip)
+        except accesos.Error as e:
+            return JSONResponse({"success": False, "message": str(e)}, status_code=429)
+    if accion == "acceso_estado":
+        return {"estado": accesos.estado(request.headers.get("x-app-token") or "")}
     if not _acceso_permitido(request, accion):
         mensaje = ("Clave de acceso incorrecta." if ajustes.publico()
                    else "Esta librería es privada: necesita su clave de acceso.")
         return JSONResponse({"success": False, "message": mensaje}, status_code=401)
     I, T = nucleo.PETICION_INTERNA, nucleo.TOKEN_SISTEMA
+    completo = _clave_valida(request)
+    if not completo and accion in ("caratula", "descargar", "grupo_ficheros", "grupo_fichero") \
+            and not federacion.es_compartido(_param(q, "system"), _param(q, "grupo" if accion.startswith("grupo") else "filename")):
+        # Sin acceso, un juego privado no existe (misma respuesta que uno inexistente).
+        raise HTTPException(status_code=404, detail="Juego no encontrado.")
 
     if q.get("origen") and accion in ("caratula", "descargar", "grupo_ficheros", "grupo_fichero"):
         return _sin_intermediario()
@@ -88,7 +112,7 @@ async def api_app(request: Request):
         return nucleo.listar_sistemas(I, T)
     if accion == "juegos":
         juegos = await federacion.listar_para_app(
-            sistema=q.get("system"), texto=q.get("q"), libreria=q.get("libreria", "personal"))
+            sistema=q.get("system"), texto=q.get("q"), libreria=q.get("libreria", "personal"), completo=completo)
         for juego in juegos:
             juego["coverUrl"] = _url_caratula(juego)
         return juegos
@@ -107,7 +131,7 @@ async def api_app(request: Request):
     if accion == "versiones":
         # Versiones superadas de los juegos de esta librería y la actual de
         # cada uno: la app actualiza lo que tenga instalado (ver versiones.py).
-        return {"obsoletas": await federacion.obsoletas_para_app()}
+        return {"obsoletas": await federacion.obsoletas_para_app(completo)}
     if accion == "version":
         return await _version()
     if accion == "apk":

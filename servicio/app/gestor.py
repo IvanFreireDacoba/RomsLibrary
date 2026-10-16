@@ -26,6 +26,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
+import accesos
 import ajustes
 import config
 import externos
@@ -194,16 +195,20 @@ async def subir_o_editar(request: Request, usuario: str = Usuario):
         if modo == "ficha":
             return _ok(_guardar_ficha(form, sistema, usuario))
         titulo = _titulo_de_otro_idioma(form, sistema) if modo != "actualizar" else ""
+        # Juego nuevo: hay que elegir SIEMPRE si es solo para ti o compartido (y por qué).
+        compartido = _visibilidad(form, enlace=modo == "enlace") if modo != "actualizar" else None
         if modo == "enlace":
             # Juego nuevo solo con un enlace (+ nombre, carátula e idiomas): ver externos.py.
-            return _ok(await externos.anadir_juego(sistema, str(form.get("nombre", "")), str(form.get("url", "")),
-                                                   str(form.get("pagina", "")), usuario,
-                                                   caratula=_fichero(form, "cover", obligatorio=False),
-                                                   idiomas=_idiomas(form), titulo=titulo))
+            r = await externos.anadir_juego(sistema, str(form.get("nombre", "")), str(form.get("url", "")),
+                                            str(form.get("pagina", "")), usuario,
+                                            caratula=_fichero(form, "cover", obligatorio=False),
+                                            idiomas=_idiomas(form), titulo=titulo)
+            fichas.guardar(sistema, r["filename"], usuario, compartido=compartido)
+            return _ok(r)
         if modo == "grupo":
             resultado = await _subir_grupo(form, sistema)
             fichas.guardar(sistema, _nombre_grupo_final(sistema, str(form.get("nombre_juego", "")).strip()), usuario,
-                           titulo=titulo, idiomas=_idiomas(form))
+                           titulo=titulo, idiomas=_idiomas(form), compartido=compartido)
             return resultado
         if modo == "actualizar":
             return _ok(await versiones.actualizar(sistema, str(form.get("nombre", "")), _fichero(form, "rom"), usuario,
@@ -211,10 +216,22 @@ async def subir_o_editar(request: Request, usuario: str = Usuario):
         rom = _fichero(form, "rom")
         r = await nucleo.subir_juego(I, T, system=sistema, filename=str(form.get("nombre", "")).strip(), rom=rom,
                                      cover=_fichero(form, "cover", obligatorio=False))
-        fichas.guardar(sistema, r["filename"], usuario, titulo=titulo, idiomas=_idiomas(form))
+        fichas.guardar(sistema, r["filename"], usuario, titulo=titulo, idiomas=_idiomas(form), compartido=compartido)
         return _ok()
     except HTTPException as e:
         return _error(e)
+
+
+def _visibilidad(form, enlace: bool = False) -> tuple:
+    """«Solo para mí» o «Compartido» con su base (fichas.BASES). «Enlace del
+    autor» solo vale para los juegos que se descargan de la web de su autor."""
+    try:
+        valor = fichas.visibilidad(form.get("visibilidad"), form.get("base"), form.get("base_detalle"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if valor[1] == "autor" and not enlace:
+        raise HTTPException(400, "«Enlace a la web de su autor» solo vale para juegos que se descargan de la web de su autor.")
+    return valor
 
 
 def _titulo_de_otro_idioma(form, sistema: str) -> str:
@@ -252,6 +269,8 @@ def _guardar_ficha(form, sistema: str, usuario: str) -> dict:
         campos["titulo"] = str(form.get("titulo", ""))
     if "idiomas" in form:
         campos["idiomas"] = _idiomas(form)
+    if "visibilidad" in form:
+        campos["compartido"] = _visibilidad(form, enlace=bool(externos.por_ruta().get(f"{nucleo.nombre_seguro(sistema)}/{nombre}")))
     if "corrupto" in form:
         valor = str(form.get("corrupto"))
         campos["corrupto"] = {"1": True, "0": False}.get(valor)       # "auto" -> lo decide la verificación
@@ -281,6 +300,23 @@ async def _subir_grupo(form, sistema: str):
         nucleo.borrar_grupo_incompleto(sistema, nombre_juego, I, T)
         raise
     return _ok()
+
+
+# ---------- Accesos de consolas (ver accesos.py) ----------
+
+@router.get("/api/accesos")
+def lista_accesos(usuario: str = Usuario):
+    return _ok(accesos.listar())
+
+
+@router.post("/api/accesos")
+async def decidir_acceso(request: Request, usuario: str = Usuario):
+    datos = await request.json()
+    try:
+        accesos.decidir(int(datos.get("id") or 0), str(datos.get("accion", "")), usuario)
+    except accesos.Error as e:
+        return _error(HTTPException(400, str(e)))
+    return _ok(accesos.listar())
 
 
 @router.get("/api/versiones")
