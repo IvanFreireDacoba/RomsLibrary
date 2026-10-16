@@ -5,10 +5,10 @@ directorio (un volumen en Docker):
 
     /datos/ROMs/<sistema>/...       juegos
     /datos/covers/<sistema>/...     carátulas subidas a mano
-    /datos/saves/<grupo>/...        guardados de las consolas
+    /datos/anteriores/<sha>         última versión limpia de los juegos actualizados (versiones.py)
     /datos/apk/                     APK de la app (opcional, ver ajustes de APK)
     /datos/tmp/                     temporales grandes (subidas, zips)
-    /datos/romslibrary.db           SQLite: consolas, ajustes, federación, hashes
+    /datos/romslibrary.db           SQLite: ajustes, federación, hashes, versiones
 """
 
 import os
@@ -26,7 +26,6 @@ def _bool(nombre: str, defecto: bool) -> bool:
 DATOS = Path(os.environ.get("ROMSLIBRARY_DATOS", "/datos"))
 ROOT = DATOS / "ROMs"
 COVERS_ROOT = DATOS / "covers"
-SAVES_ROOT = DATOS / "saves"
 APK_DIR = DATOS / "apk"
 TMP = DATOS / "tmp"
 DB_PATH = DATOS / "romslibrary.db"
@@ -65,16 +64,6 @@ CLAVE_APP_INICIAL = os.environ.get("ROMSLIBRARY_CLAVE_APP", "")
 # desde el gestor (con su aviso legal). Esto solo cambia el valor inicial.
 PUBLICO_INICIAL = _bool("ROMSLIBRARY_PUBLICO", False)
 
-# Partidas de las consolas: en una librería pública cualquiera puede registrar
-# una consola, así que hay topes (por fichero, por grupo de consolas y espacio
-# libre mínimo en disco). Los guardados más grandes reales (Switch, comprimido
-# entero) rondan los cientos de MB.
-GUARDADO_MAX_BYTES = int(os.environ.get("ROMSLIBRARY_GUARDADO_MAX_MB", "512")) * 1024 * 1024
-GUARDADOS_CUOTA_GRUPO_BYTES = int(os.environ.get("ROMSLIBRARY_GUARDADOS_CUOTA_GB", "4")) * 1024 ** 3
-DISCO_LIBRE_MINIMO_BYTES = int(os.environ.get("ROMSLIBRARY_DISCO_LIBRE_MINIMO_GB", "20")) * 1024 ** 3
-# Consolas NUEVAS por IP y día (las ya registradas no cuentan).
-REGISTROS_POR_IP_DIA = int(os.environ.get("ROMSLIBRARY_REGISTROS_POR_IP_DIA", "5"))
-
 # Uso de disco: categorías extra a mostrar en la barra del gestor, con el
 # formato "Películas=/media/peliculas,Series=/media/series".
 DISCO_EXTRA = [
@@ -83,7 +72,7 @@ DISCO_EXTRA = [
     if "=" in parte
 ]
 
-for _carpeta in (ROOT, COVERS_ROOT, SAVES_ROOT, APK_DIR, TMP):
+for _carpeta in (ROOT, COVERS_ROOT, APK_DIR, TMP):
     _carpeta.mkdir(parents=True, exist_ok=True)
 
 # Subidas y zips de varios GB: nunca en /tmp (puede ser tmpfs en RAM; en

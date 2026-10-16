@@ -28,7 +28,6 @@ from starlette.background import BackgroundTask
 
 import ajustes
 import config
-import consolas
 
 def extension_real_de_imagen(cabecera: bytes) -> Optional[str]:
     """Determina la extensión mirando los bytes de verdad, NUNCA el nombre de
@@ -75,7 +74,6 @@ def guardar_caratula(contenido: bytes, carpeta_caratulas: Path, stem: str) -> st
 
 ROOT = config.ROOT
 COVERS_ROOT = config.COVERS_ROOT
-SAVES_ROOT = config.SAVES_ROOT
 APK_PATH = config.APK_PATH
 EXTENSIONES_CARATULA_PERMITIDAS = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -145,7 +143,6 @@ async def _ciclo_vida(_app):
 # Sin /docs ni /openapi.json: el servicio está expuesto a internet y no
 # hace falta publicar el mapa completo de rutas.
 app = FastAPI(title="RomsLibrary", lifespan=_ciclo_vida, docs_url=None, redoc_url=None, openapi_url=None)
-consolas.inicializar()
 ajustes.inicializar()
 # Una carpeta por sistema soportado: en una instalación nueva no existe
 # ninguna y la primera subida fallaba con "Crea la carpeta antes de subir".
@@ -893,12 +890,8 @@ def renombrar_juego(
       .cue/.iso/.chd) -- RetroArch nombra el guardado según ESE fichero, y
       la app según la carpeta; si no se renombran juntos dejan de coincidir.
     - Carátula: mismo nombre base nuevo.
-    - Guardados de TODOS los jugadores (saves/<android_id>/<sistema>/<clave>):
-      la clave es el nombre sin extensión (igual que la app), así que se
-      mueve la carpeta y se renombra cada fichero <tipo>__<core>__<clave>.<ext>.
-      Sin esto, renombrar un ROM dejaba huérfanos sus guardados (pasó con
-      Zelda Minish Cap).
-    Se comprueban TODOS los conflictos antes de tocar nada."""
+    Las partidas no están aquí sino en el servicio de partidas, aparte de
+    cualquier librería. Se comprueban TODOS los conflictos antes de tocar nada."""
     exigir_token(request, token)
     system = nombre_seguro(system)
     filename = nombre_seguro(filename)
@@ -945,20 +938,6 @@ def renombrar_juego(
         if (c.parent / (clave_nueva + c.suffix)).exists():
             raise HTTPException(status_code=409, detail="Ya existe una carátula con el nuevo nombre.")
 
-    movimientos_saves = []
-    if clave_vieja != clave_nueva and SAVES_ROOT.is_dir():
-        for carpeta_jugador in SAVES_ROOT.iterdir():
-            vieja = carpeta_jugador / system / clave_vieja
-            if not vieja.is_dir():
-                continue
-            nueva = carpeta_jugador / system / clave_nueva
-            if nueva.exists():
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"El jugador {carpeta_jugador.name} ya tiene guardados con el nombre nuevo; no se mezclan.",
-                )
-            movimientos_saves.append((vieja, nueva))
-
     # --- A partir de aquí ya no hay conflictos posibles: se aplica todo ---
     origen.rename(destino)
     if lanzable is not None:
@@ -973,13 +952,6 @@ def renombrar_juego(
             ruta_json.write_text(json.dumps(datos_grupo, ensure_ascii=False, indent=2), encoding="utf-8")
     for c in caratulas:
         c.rename(c.parent / (clave_nueva + c.suffix))
-    for vieja, nueva in movimientos_saves:
-        vieja.rename(nueva)
-        sufijo = f"__{clave_vieja}."
-        for f in nueva.iterdir():
-            pos = f.name.find(sufijo)
-            if f.is_file() and pos != -1:
-                f.rename(nueva / (f.name[:pos] + f"__{clave_nueva}." + f.name[pos + len(sufijo):]))
     # El juego conserva su historial de versiones y, si es un solo fichero,
     # su SHA (renombrar no cambia el contenido: no hace falta recalcularlo).
     import versiones
@@ -989,7 +961,6 @@ def renombrar_juego(
         "ok": True,
         "nuevo_nombre": nuevo_nombre,
         "caratulas": len(caratulas),
-        "jugadores_con_guardados": len(movimientos_saves),
     }
 
 
@@ -1019,187 +990,6 @@ async def cambiar_caratula(
         anterior.unlink()
     guardada = guardar_caratula(contenido, COVERS_ROOT / system, stem)
     return {"ok": True, "cover": guardada}
-
-
-def _ruta_en(carpeta: Path, sistema: str, clave: str, nombre_fichero: str) -> Path:
-    """<carpeta de guardados>/<sistema>/<clave>/<nombre_fichero>. clave es el
-    nombre del ROM sin extensión (guardado 1:1 por juego) o "_compartido"
-    (emuladores que no separan por juego: memory cards de PS2, NAND de
-    Switch...)."""
-    for valor in (sistema, clave, nombre_fichero):
-        nombre_seguro(valor)
-    ruta = (carpeta / sistema / clave / nombre_fichero).resolve()
-    if not str(ruta).startswith(str(SAVES_ROOT.resolve()) + os.sep):
-        raise HTTPException(status_code=400, detail="Ruta de guardado inválida.")
-    return ruta
-
-
-def _ocupado(carpeta: Path, excepto: Path) -> int:
-    if not carpeta.is_dir():
-        return 0
-    return sum(f.stat().st_size for f in carpeta.rglob("*") if f.is_file() and f != excepto)
-
-
-async def _guardar_subida(ruta: Path, fichero: UploadFile, mtime: float, carpeta_grupo: Path) -> None:
-    """Se escribe a un temporal y se renombra al final: si la subida se
-    corta, el guardado anterior queda intacto en vez de truncado. Se
-    conserva la fecha REAL del dispositivo: es la que decide qué copia es
-    más nueva en cada sincronización.
-
-    Topes (ver config): tamaño por fichero, cuota del grupo de consolas y
-    espacio libre mínimo en disco. Si se pasa, no se toca el guardado anterior."""
-    if shutil.disk_usage(SAVES_ROOT).free < config.DISCO_LIBRE_MINIMO_BYTES:
-        raise HTTPException(status_code=507, detail="El servidor no tiene espacio para más partidas.")
-    disponible = min(config.GUARDADO_MAX_BYTES, config.GUARDADOS_CUOTA_GRUPO_BYTES - _ocupado(carpeta_grupo, ruta))
-    ruta.parent.mkdir(parents=True, exist_ok=True)
-    temporal = ruta.with_name(ruta.name + ".subiendo")
-    escritos = 0
-    try:
-        with open(temporal, "wb") as salida:
-            while trozo := await fichero.read(1024 * 1024):
-                escritos += len(trozo)
-                if escritos > disponible:
-                    raise HTTPException(status_code=413, detail=(
-                        "Partida demasiado grande." if escritos > config.GUARDADO_MAX_BYTES
-                        else "Se ha llenado el espacio de partidas de estas consolas."))
-                salida.write(trozo)
-    except BaseException:
-        temporal.unlink(missing_ok=True)
-        raise
-    os.utime(temporal, (mtime, mtime))
-    temporal.replace(ruta)
-
-
-# ---------- API v2: consolas registradas (android_id + identificador) ----------
-
-def _consola(android_id: str, identificador: str):
-    try:
-        return consolas.autenticar(android_id, identificador)
-    except consolas.ErrorConsola as e:
-        raise HTTPException(status_code=e.codigo, detail=str(e))
-
-
-def _ejecutar(funcion, *args):
-    try:
-        return funcion(*args)
-    except consolas.ErrorConsola as e:
-        raise HTTPException(status_code=e.codigo, detail=str(e))
-
-
-@app.post("/api/v2/consola/registrar")
-def consola_registrar(
-    request: Request,
-    token: str | None = Query(default=None),
-    android_id: str = Form(...),
-    nombre: str = Form(default=""),
-):
-    """Primera configuración de la app: devuelve el identificador público
-    (XXXXX-XXXXX) y el nombre. Idempotente."""
-    exigir_token(request, token)
-    return _ejecutar(consolas.registrar, android_id, nombre)
-
-
-@app.get("/api/v2/consola/estado")
-def consola_estado(
-    request: Request,
-    token: str | None = Query(default=None),
-    android_id: str = Query(...),
-    identificador: str = Query(...),
-):
-    exigir_token(request, token)
-    return consolas.estado(_consola(android_id, identificador))
-
-
-@app.post("/api/v2/consola/{accion}")
-def consola_accion(
-    accion: str,
-    request: Request,
-    token: str | None = Query(default=None),
-    android_id: str = Form(...),
-    identificador: str = Form(...),
-    nombre: str = Form(default=""),
-    otra: str = Form(default=""),
-    solicitud: int = Form(default=0),
-    aceptar: bool = Form(default=False),
-):
-    """renombrar (nombre) · solicitar / desincronizar / bloquear / desbloquear
-    (otra = identificador de la otra consola) · responder (solicitud, aceptar)
-    · cancelar (solicitud enviada)."""
-    exigir_token(request, token)
-    yo = _consola(android_id, identificador)
-    acciones = {
-        "renombrar": lambda: consolas.renombrar(yo, nombre),
-        "solicitar": lambda: consolas.solicitar(yo, otra),
-        "responder": lambda: consolas.responder(yo, solicitud, aceptar),
-        "cancelar": lambda: consolas.cancelar_solicitud(yo, solicitud),
-        "desincronizar": lambda: consolas.desincronizar(yo, otra),
-        "bloquear": lambda: consolas.bloquear(yo, otra),
-        "desbloquear": lambda: consolas.desbloquear(yo, otra),
-    }
-    if accion not in acciones:
-        raise HTTPException(status_code=404, detail="Acción desconocida.")
-    return _ejecutar(acciones[accion])
-
-
-@app.get("/api/v2/save/indice")
-def guardados_indice(
-    request: Request,
-    token: str | None = Query(default=None),
-    android_id: str = Query(...),
-    identificador: str = Query(...),
-):
-    """Todos los guardados del grupo de la consola, para que la app compare
-    en una sola petición al abrirse (sube lo local más nuevo, baja lo remoto
-    más nuevo de los juegos instalados)."""
-    exigir_token(request, token)
-    carpeta = consolas.carpeta_guardados(_consola(android_id, identificador))
-    if not carpeta.is_dir():
-        return []
-    resultado = []
-    for f in carpeta.rglob("*"):
-        partes = f.relative_to(carpeta).parts
-        if f.is_file() and len(partes) == 3 and not f.name.endswith(".subiendo"):
-            st = f.stat()
-            resultado.append({"sistema": partes[0], "clave": partes[1], "nombre_fichero": partes[2],
-                              "mtime": st.st_mtime, "tamano": st.st_size})
-    return resultado
-
-
-@app.post("/api/v2/save/upload")
-async def guardado_subir_v2(
-    request: Request,
-    token: str | None = Query(default=None),
-    android_id: str = Form(...),
-    identificador: str = Form(...),
-    sistema: str = Form(...),
-    clave: str = Form(...),
-    nombre_fichero: str = Form(...),
-    mtime_dispositivo: float = Form(...),
-    fichero: UploadFile = File(...),
-):
-    exigir_token(request, token)
-    carpeta = consolas.carpeta_guardados(_consola(android_id, identificador))
-    ruta = _ruta_en(carpeta, sistema, clave, nombre_fichero)
-    await _guardar_subida(ruta, fichero, mtime_dispositivo, carpeta)
-    return {"ok": True, "mtime": mtime_dispositivo}
-
-
-@app.get("/api/v2/save/download")
-def guardado_bajar_v2(
-    request: Request,
-    token: str | None = Query(default=None),
-    android_id: str = Query(...),
-    identificador: str = Query(...),
-    sistema: str = Query(...),
-    clave: str = Query(...),
-    nombre_fichero: str = Query(...),
-):
-    exigir_token(request, token)
-    carpeta = consolas.carpeta_guardados(_consola(android_id, identificador))
-    ruta = _ruta_en(carpeta, sistema, clave, nombre_fichero)
-    if not ruta.is_file():
-        raise HTTPException(status_code=404, detail="No hay guardado ahí.")
-    return FileResponse(ruta, media_type="application/octet-stream", filename=nombre_fichero)
 
 
 @app.get("/api/health")
