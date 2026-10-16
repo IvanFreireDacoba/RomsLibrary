@@ -17,6 +17,7 @@ aceptan nombres locales, nunca un "origen"); de los ajenos solo descargar
 o copiar a la librería personal.
 """
 
+import asyncio
 import json
 import secrets
 import time
@@ -32,6 +33,7 @@ import config
 import externos
 import federacion
 import fichas
+import verificacion
 import versiones
 import main as nucleo
 
@@ -129,7 +131,7 @@ async def guardar_ajustes(request: Request, usuario: str = Usuario):
             # puede volver siempre, sin condiciones.
             if not datos.get("acepto_aviso_publica"):
                 return _error(HTTPException(400, "Para hacer pública la librería hay que aceptar el aviso legal."))
-            ajustes.guardar("publica_aceptada", f"{time.strftime('%Y-%m-%d %H:%M:%S')} por {usuario}")
+            ajustes.guardar("publica_aceptada", time.strftime("%Y-%m-%d %H:%M:%S"))      # sin quién: solo cuándo
         ajustes.guardar("publico", "1" if datos["publico"] else "0")
     aviso = None
     try:
@@ -193,7 +195,7 @@ async def subir_o_editar(request: Request, usuario: str = Usuario):
                                           cover=_fichero(form, "cover"))
             return _ok()
         if modo == "ficha":
-            return _ok(_guardar_ficha(form, sistema, usuario))
+            return _ok(await _guardar_ficha(form, sistema, usuario))
         titulo = _titulo_de_otro_idioma(form, sistema) if modo != "actualizar" else ""
         # Juego nuevo: hay que elegir SIEMPRE si es solo para ti o compartido (y por qué).
         compartido = _visibilidad(form, enlace=modo == "enlace") if modo != "actualizar" else None
@@ -203,23 +205,60 @@ async def subir_o_editar(request: Request, usuario: str = Usuario):
                                             str(form.get("pagina", "")), usuario,
                                             caratula=_fichero(form, "cover", obligatorio=False),
                                             idiomas=_idiomas(form), titulo=titulo)
-            fichas.guardar(sistema, r["filename"], usuario, compartido=compartido)
-            return _ok(r)
+            return _ok({**r, **await _compartir(sistema, r["filename"], usuario, compartido, form)})
         if modo == "grupo":
-            resultado = await _subir_grupo(form, sistema)
-            fichas.guardar(sistema, _nombre_grupo_final(sistema, str(form.get("nombre_juego", "")).strip()), usuario,
-                           titulo=titulo, idiomas=_idiomas(form), compartido=compartido)
-            return resultado
+            await _subir_grupo(form, sistema)
+            return _ok(await _compartir(sistema, _nombre_grupo_final(sistema, str(form.get("nombre_juego", "")).strip()),
+                                        usuario, compartido, form, titulo=titulo, idiomas=_idiomas(form)))
         if modo == "actualizar":
             return _ok(await versiones.actualizar(sistema, str(form.get("nombre", "")), _fichero(form, "rom"), usuario,
                                                   sin_cabecera_ok=str(form.get("sin_cabecera_ok")) == "1"))
         rom = _fichero(form, "rom")
         r = await nucleo.subir_juego(I, T, system=sistema, filename=str(form.get("nombre", "")).strip(), rom=rom,
                                      cover=_fichero(form, "cover", obligatorio=False))
-        fichas.guardar(sistema, r["filename"], usuario, titulo=titulo, idiomas=_idiomas(form), compartido=compartido)
-        return _ok()
+        return _ok(await _compartir(sistema, r["filename"], usuario, compartido, form, titulo=titulo,
+                                    idiomas=_idiomas(form)))
     except HTTPException as e:
         return _error(e)
+
+
+def _aviso_publicado(sistema: str, nombre: str) -> str | None:
+    """Bloqueante (hilo aparte): ¿es un juego publicado según su contenido?"""
+    ruta = config.ROOT / sistema / nombre
+    sha = federacion.sha_conocido(sistema, nombre)
+    if not sha and ruta.exists():
+        tamano, mtime = federacion._firma(ruta)          # recién subido: el hilo de hashes aún no ha pasado
+        sha = federacion._sha_juego(ruta)
+        with federacion._conectar() as con:
+            con.execute("INSERT OR REPLACE INTO hashes (ruta, tamano, mtime, sha) VALUES (?, ?, ?, ?)",
+                        (f"{sistema}/{nombre}", tamano, mtime, sha))
+    try:
+        return verificacion.identificar_publicado(sistema, nombre, sha)
+    except Exception as e:  # noqa: BLE001 -- el aviso nunca impide guardar
+        print(f"[gestor] aviso de {sistema}/{nombre}: {e}", flush=True)
+        return None
+
+
+async def _compartir(sistema: str, nombre: str, usuario: str, compartido: tuple, form, **campos) -> dict:
+    """Guarda la ficha con su visibilidad. Si se va a compartir un juego que su
+    contenido identifica como publicado (No-Intro/Redump), AVISA: se queda
+    «Solo para mí» hasta que el administrador confirme expresamente
+    (confirmo_aviso=1), y la confirmación queda anotada. Nunca se bloquea."""
+    sistema = nucleo.nombre_seguro(sistema)
+    previa = fichas.todas().get(f"{sistema}/{nombre}") or {}
+    if compartido and compartido[0] and previa.get("compartido") \
+            and (previa.get("base"), previa.get("base_detalle") or "") == (compartido[1], compartido[2]):
+        compartido = None             # ya compartido igual: ni se vuelve a preguntar ni se reescribe lo anotado
+    aviso = await asyncio.to_thread(_aviso_publicado, sistema, nombre) if compartido and compartido[0] else None
+    if aviso and str(form.get("confirmo_aviso")) != "1":
+        fichas.guardar(sistema, nombre, usuario, compartido=(False, None, ""), **campos)
+        return {"necesitaConfirmacion": True, "aviso": aviso, "sistema": sistema, "nombre": nombre,
+                "visibilidad": "compartido", "base": compartido[1], "base_detalle": compartido[2]}
+    if compartido is not None:
+        campos["compartido"] = compartido
+        campos["aviso"] = aviso or ""
+    fichas.guardar(sistema, nombre, usuario, **campos)
+    return {}
 
 
 def _visibilidad(form, enlace: bool = False) -> tuple:
@@ -259,7 +298,7 @@ def _nombre_grupo_final(sistema: str, nombre_juego: str) -> str:
     return candidatos[0] if candidatos else nombre_juego
 
 
-def _guardar_ficha(form, sistema: str, usuario: str) -> dict:
+async def _guardar_ficha(form, sistema: str, usuario: str) -> dict:
     """Título (para juntar idiomas), idiomas y marca de archivo corrupto de un juego propio."""
     nombre = nucleo.nombre_seguro(str(form.get("nombre", "")))
     if not (config.ROOT / nucleo.nombre_seguro(sistema) / nombre).exists():
@@ -276,8 +315,8 @@ def _guardar_ficha(form, sistema: str, usuario: str) -> dict:
         campos["corrupto"] = {"1": True, "0": False}.get(valor)       # "auto" -> lo decide la verificación
         campos["motivo"] = str(form.get("motivo", ""))
         campos["sha"] = federacion.sha_conocido(nucleo.nombre_seguro(sistema), nombre)   # la marca es de esta versión
-    fichas.guardar(sistema, nombre, usuario, **campos)
-    return {"ok": True}
+    compartido = campos.pop("compartido", None)
+    return {"ok": True, **await _compartir(sistema, nombre, usuario, compartido, form, **campos)}
 
 
 async def _subir_grupo(form, sistema: str):
@@ -313,7 +352,7 @@ def lista_accesos(usuario: str = Usuario):
 async def decidir_acceso(request: Request, usuario: str = Usuario):
     datos = await request.json()
     try:
-        accesos.decidir(int(datos.get("id") or 0), str(datos.get("accion", "")), usuario)
+        accesos.decidir(int(datos.get("id") or 0), str(datos.get("accion", "")))
     except accesos.Error as e:
         return _error(HTTPException(400, str(e)))
     return _ok(accesos.listar())

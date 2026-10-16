@@ -257,6 +257,10 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         .rl-vis-op input { margin-top: 4px; flex: none; }
         .rl-card-privado { background: #262c38; color: #b8c2d0; }
         .rl-card-compartido { background: #1c3a24; color: #7bffb0; }
+        .rl-card-publico { background: #4a4317; color: #ffd75e; }
+        .rl-vis-aviso { border: 1px solid #8a7a2a; background: #2e2a12; color: #ffd75e; padding: 6px 8px; border-radius: 6px; margin-top: 6px; }
+        .rl-publicos { flex: none; margin-bottom: 8px; padding: 8px 10px; border: 1px solid #8a7a2a; background: #2e2a12; color: #ffd75e; border-radius: 6px; }
+        .rl-publicos:empty { display: none; }
         .rl-accesos { flex: none; margin-bottom: 8px; padding: 8px 10px; border: 1px solid #2f5f8a; border-radius: 6px; }
         .rl-accesos:empty { display: none; }
         .rl-accesos .rl-fila-acceso { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
@@ -858,6 +862,9 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                             <option value="autor">Enlace a la web de su autor</option>
                         </select>
                         <input type="text" class="rl-vis-detalle" placeholder="Detalle" style="margin-top:4px; display:none;">
+                        <div class="rl-vis-aviso" style="display:none;">⚠ Esta librería es <strong>pública</strong>: este juego
+                            lo podrá ver y descargar <strong>cualquiera</strong>, y se compartirá con las otras librerías
+                            públicas. Hazlo solo si tienes derecho a distribuirlo.</div>
                         <p class="rl-ayuda">Comparte solo lo que tengas derecho a distribuir. Una copia de seguridad de tu
                             original es solo para ti; un ROM hack ya parcheado contiene el juego original (comparte el
                             parche o el enlace de su autor). Lo que declares aquí queda registrado.</p>
@@ -926,6 +933,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     </select>
                     <input type="text" id="rl-filtro-nombre" placeholder="Buscar por nombre...">
                 </div>
+                <div id="rl-publicos" class="rl-publicos"></div>
                 <div id="rl-accesos" class="rl-accesos"></div>
                 <div id="rl-copias" class="rl-copias"></div>
                 <div id="rl-corruptos" class="rl-corruptos"></div>
@@ -935,6 +943,22 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
 
         </div>
     </section>
+
+    <dialog class="server-card rl-panel rl-dialogo" id="rl-dialogo-aviso" style="border:2px solid #b8323c;">
+        <h2 style="color:#ff6b6b;">⚠ Parece un juego publicado</h2>
+        <p id="rl-aviso-texto" style="color:#ffb3b3;"></p>
+        <p>Por su <strong>contenido</strong> (no por su nombre), este fichero coincide con un juego publicado según las
+            bases de volcados No-Intro/Redump. Compartir un juego publicado sin permiso de su titular es ilegal en
+            España y en muchos otros países, aunque sea gratis. Si es tuyo, libre o tienes permiso, puedes compartirlo:
+            la decisión y la responsabilidad son tuyas. Mientras no lo confirmes, se queda «Solo para mí».</p>
+        <label class="rl-vis-op"><input type="checkbox" id="rl-aviso-confirmo">
+            <span>Confirmo que tengo derecho a distribuir este juego.</span></label>
+        <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+            <button class="rl-btn" id="rl-aviso-compartir" disabled style="background:#b8323c;">Compartir igualmente</button>
+            <button class="rl-btn rl-btn-secundario" id="rl-aviso-privado">Dejarlo «Solo para mí»</button>
+        </div>
+        <div class="rl-msg" id="rl-aviso-msg"></div>
+    </dialog>
 
     <dialog class="server-card rl-panel rl-dialogo" id="rl-dialogo-editar">
         <h2>&gt; Editar juego_</h2>
@@ -981,6 +1005,9 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                             <option value="autor">Enlace a la web de su autor</option>
                         </select>
                         <input type="text" class="rl-vis-detalle" placeholder="Detalle" style="margin-top:4px; display:none;">
+                        <div class="rl-vis-aviso" style="display:none;">⚠ Esta librería es <strong>pública</strong>: este juego
+                            lo podrá ver y descargar <strong>cualquiera</strong>, y se compartirá con las otras librerías
+                            públicas. Hazlo solo si tienes derecho a distribuirlo.</div>
                         <p class="rl-ayuda">Comparte solo lo que tengas derecho a distribuir. Una copia de seguridad de tu
                             original es solo para ti; un ROM hack ya parcheado contiene el juego original (comparte el
                             parche o el enlace de su autor). Lo que declares aquí queda registrado.</p>
@@ -1326,6 +1353,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
 
             try {
                 const data = await rlSubirConProgreso(form, msg);
+                if (data.success && data.data && data.data.necesitaConfirmacion) rlConfirmarAvisoCompartir(data.data);
                 if (data.success) {
                     msg.textContent = rlDesdeEnlace() ? 'Añadido desde el enlace: ' + data.data.filename : 'Subido correctamente.';
                     msg.style.color = '#7bffb0';
@@ -1433,6 +1461,12 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 o.value = t;
                 lista.appendChild(o);
             });
+            const publicos = propios.filter((j) => j.compartido);
+            document.getElementById('rl-publicos').innerHTML = rlEraPublica && publicos.length
+                ? '<strong>⚠ ' + publicos.length + (publicos.length === 1 ? ' juego público' : ' juegos públicos')
+                  + '</strong>: la librería es pública y los ve y descarga cualquiera (y se comparten con otras librerías). '
+                  + 'Comprueba que tienes derecho a distribuirlos; si no, pásalos a «Solo para mí» en Editar.'
+                : '';
             const corruptos = propios.filter((j) => j.corrupto);
             const aviso = document.getElementById('rl-corruptos');
             aviso.innerHTML = corruptos.length === 0 ? '' : '<strong>✖ ' + corruptos.length + (corruptos.length === 1
@@ -1545,9 +1579,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                         (juego.version > 1 ? '<span class="rl-card-lib" title="Versión actual (ver Editar)">v' + (+juego.version) + '</span>' : '') +
                         (juego.fuenteExterna ? '<span class="rl-card-lib" title="Se descarga desde la web del autor">' + (juego.fuenteEstado === 'cambiado' ? '⚠ enlace cambiado' : juego.fuenteEstado === 'caido' ? '⚠ enlace caído' : 'enlace del autor') + '</span>' : '') +
                         (juego.verificacion && juego.verificacion.estado === 'verificado' ? '<span class="rl-card-lib" title="' + rlEscapar(juego.verificacion.nombre) + '">✔ ' + rlEscapar(juego.verificacion.fuente) + '</span>' : '') +
-                        (!juego.origen ? (juego.compartido
-                            ? '<span class="rl-card-lib rl-card-compartido" title="' + rlEscapar((RL_BASES[juego.base] || '') + (juego.baseDetalle ? ': ' + juego.baseDetalle : '')) + '">compartido</span>'
-                            : '<span class="rl-card-lib rl-card-privado" title="Solo lo ven las consolas con acceso a esta librería">solo para mí</span>') : '') +
+                        (!juego.origen ? rlEtiquetaVisibilidad(juego) : '') +
                         (juego.corrupto ? '<span class="rl-card-lib ' + (juego.corruptoAutomatico ? 'rl-card-corrupto-auto' : 'rl-card-corrupto') + '" title="' + rlEscapar(juego.motivoCorrupto + ' · ' + rlEstadoServicio(juego)) + '">' + (juego.corruptoAutomatico ? '⚠ posible archivo corrupto' : '✖ archivo corrupto') + '</span>' : '') +
                         (!juego.corrupto && juego.verificacion && juego.verificacion.estado === 'dudoso' ? '<span class="rl-card-lib" style="color:#ffb36b" title="' + rlEscapar(juego.verificacion.detalle) + '">⚠ volcado dudoso (revisado: está bien)</span>' : '') +
                         (rlEtiquetaIdiomas(juego) ? '<span class="rl-card-lib" title="Idiomas' + (juego.idiomasDeducidos ? ' (deducidos del volcado; cámbialos en Editar)' : '') + '">' + rlEscapar(rlEtiquetaIdiomas(juego)) + (juego.idiomasDeducidos ? '?' : '') + '</span>' : '') +
@@ -1745,6 +1777,14 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         }
 
         // ---------- Visibilidad de cada juego (solo para mí / compartido con su base) ----------
+        function rlEtiquetaVisibilidad(juego) {
+            const base = rlEscapar((RL_BASES[juego.base] || '') + (juego.baseDetalle ? ': ' + juego.baseDetalle : ''));
+            if (juego.compartido && rlEraPublica)
+                return '<span class="rl-card-lib rl-card-publico" title="Librería pública: lo ve y lo descarga cualquiera. ' + base + '">⚠ público</span>';
+            if (juego.compartido)
+                return '<span class="rl-card-lib rl-card-compartido" title="' + base + ' (la librería es privada: de momento no sale)">compartido</span>';
+            return '<span class="rl-card-lib rl-card-privado" title="Solo lo ven las consolas con acceso a esta librería">solo para mí</span>';
+        }
         const RL_BASES = { homebrew: 'Homebrew o juego propio', libre: 'Licencia libre', permiso: 'Permiso del titular',
                            fangame: 'Fan game original', autor: 'Enlace a la web de su autor' };
         const RL_DETALLE = { libre: 'Qué licencia (p. ej. GPL-3.0, CC BY 4.0)', permiso: 'Quién dio el permiso y cómo (p. ej. correo del autor, 2026-10)' };
@@ -1755,6 +1795,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             const detalle = caja.querySelector('.rl-vis-detalle');
             const actualizar = () => {
                 compartir.style.display = caja.querySelector('input:checked').value === 'compartido' ? 'block' : 'none';
+                caja.querySelector('.rl-vis-aviso').style.display = rlEraPublica ? 'block' : 'none';
                 detalle.style.display = RL_DETALLE[base.value] ? 'block' : 'none';
                 detalle.placeholder = RL_DETALLE[base.value] || '';
             };
@@ -1785,6 +1826,36 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             form.append('visibilidad', v.visibilidad);
             form.append('base', v.base);
             form.append('base_detalle', v.base_detalle);
+        }
+        // El servidor avisa (sin bloquear) si lo que se va a compartir es un juego publicado: se queda
+        // «Solo para mí» hasta que el administrador lo confirme aquí. No se guarda quién confirma.
+        function rlConfirmarAvisoCompartir(info) {
+            const dlg = document.getElementById('rl-dialogo-aviso');
+            const check = document.getElementById('rl-aviso-confirmo');
+            const compartir = document.getElementById('rl-aviso-compartir');
+            const msg = document.getElementById('rl-aviso-msg');
+            document.getElementById('rl-aviso-texto').textContent = info.nombre + ': ' + info.aviso;
+            check.checked = false;
+            compartir.disabled = true;
+            msg.textContent = '';
+            check.onchange = () => { compartir.disabled = !check.checked; };
+            return new Promise((resolver) => {
+                document.getElementById('rl-aviso-privado').onclick = () => { dlg.close(); resolver(false); };
+                compartir.onclick = async () => {
+                    const form = new FormData();
+                    form.append('modo', 'ficha');
+                    form.append('sistema', info.sistema);
+                    form.append('nombre', info.nombre);
+                    rlAnadirVisibilidad(form, { visibilidad: 'compartido', base: info.base, base_detalle: info.base_detalle });
+                    form.append('confirmo_aviso', '1');
+                    const data = await (await rlFetch('api/juegos', { method: 'POST', body: form })).json();
+                    if (!data.success) { msg.textContent = 'Error: ' + data.message; return; }
+                    dlg.close();
+                    resolver(true);
+                    rlCargarJuegos();
+                };
+                dlg.showModal();
+            });
         }
         rlPrepararVisibilidad('rl-vis');
         rlPrepararVisibilidad('rl-edit-vis');
@@ -2027,6 +2098,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     rlAnadirVisibilidad(form, datos.vis);
                     const data = await (await rlFetch('api/juegos', { method: 'POST', body: form })).json();
                     if (!data.success) throw new Error(data.message);
+                    if (data.data && data.data.necesitaConfirmacion) await rlConfirmarAvisoCompartir(data.data);
                 }
                 if (cambiarCaratula) {
                     msg.textContent = 'Subiendo carátula...';
@@ -2148,7 +2220,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 rlEraPublica = e.publico;
                 if (!e.publico) fed = 'Privada: solo ves y ofreces tus propios juegos.';
                 else if (!e.url_publica) fed = '⚠ Pon la URL pública para que el índice (' + e.indice_url + ') pueda dar de alta tu librería.';
-                else if (e.federada) fed = 'Pública y dada de alta en el índice ' + e.indice_url + '.';
+                else if (e.federada) fed = 'Pública y dada de alta en el índice ' + e.indice_url + ': solo se ven y se comparten los juegos marcados como «Compartido».';
                 else fed = 'Pública, pendiente de alta en el índice ' + e.indice_url + '.';
                 if (e.publico && e.publica_aceptada) fed += ' Aviso legal aceptado el ' + e.publica_aceptada + '.';
                 document.getElementById('rl-aj-federacion').textContent = fed;

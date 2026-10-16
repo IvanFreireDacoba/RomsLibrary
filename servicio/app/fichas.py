@@ -19,7 +19,10 @@ Ficha de cada juego, lo que no sale del fichero:
   librería: su clave o una consola aceptada, ver accesos.py) o COMPARTIDO
   (lo ve cualquiera si la librería es pública, y se federa). Se elige al
   subirlo, siempre: por defecto privado, y compartir exige declarar la BASE
-  (por qué se puede compartir). Un juego sin ficha es privado.
+  (por qué se puede compartir). Un juego sin ficha es privado. Si el
+  contenido es un juego publicado según No-Intro/Redump, el gestor lo avisa
+  y pide confirmación expresa (no se guarda quién confirma: la decisión y su
+  responsabilidad son de quien comparte). Nunca se bloquea.
 
 Se guarda por ruta ("<sistema>/<nombre>"); renombrar y borrar la mueven o la
 quitan (versiones.renombrado / gestor).
@@ -72,8 +75,12 @@ def inicializar() -> None:
             con.execute("ALTER TABLE fichas ADD COLUMN compartido INTEGER NOT NULL DEFAULT 0")
             con.execute("ALTER TABLE fichas ADD COLUMN base TEXT")
             con.execute("ALTER TABLE fichas ADD COLUMN base_detalle TEXT NOT NULL DEFAULT ''")
-            con.execute("ALTER TABLE fichas ADD COLUMN compartido_por TEXT NOT NULL DEFAULT ''")
             con.execute("ALTER TABLE fichas ADD COLUMN compartido_fecha REAL")
+        if "aviso" not in columnas:
+            con.execute("ALTER TABLE fichas ADD COLUMN aviso TEXT NOT NULL DEFAULT ''")
+        for sobra in ("compartido_por", "aviso_confirmado"):     # no se guarda quién comparte ni quién confirma
+            if sobra in columnas:
+                con.execute(f"ALTER TABLE fichas DROP COLUMN {sobra}")
         if "corrupto_sha" not in columnas:
             # Las marcas que ya había son de la versión que hay ahora.
             con.execute("ALTER TABLE fichas ADD COLUMN corrupto_sha TEXT")
@@ -125,10 +132,9 @@ def guardar(sistema: str, nombre: str, usuario: str, **campos) -> None:
                          None if c is None else campos.get("sha"), ruta))
         if "compartido" in campos:
             compartido, base, detalle = campos["compartido"]
-            con.execute("UPDATE fichas SET compartido = ?, base = ?, base_detalle = ?, compartido_por = ?, "
-                        "compartido_fecha = ? WHERE ruta = ?",
-                        (int(compartido), base, detalle, usuario if compartido else "",
-                         time.time() if compartido else None, ruta))
+            aviso = str(campos.get("aviso") or "")[:500] if compartido else ""
+            con.execute("UPDATE fichas SET compartido = ?, base = ?, base_detalle = ?, compartido_fecha = ?, aviso = ? "
+                        "WHERE ruta = ?", (int(compartido), base, detalle, time.time() if compartido else None, aviso, ruta))
         con.execute("UPDATE fichas SET usuario = ?, fecha = ? WHERE ruta = ?", (usuario, time.time(), ruta))
 
 
@@ -211,4 +217,5 @@ def completar(j: dict, ficha: dict | None, verif: dict | None) -> None:
     j["corruptoDescartado"] = marca == 0
     j["compartido"] = bool(ficha.get("compartido"))
     j["base"] = ficha.get("base") if j["compartido"] else None
-    j["baseDetalle"] = (ficha.get("base_detalle") or "") if j["compartido"] else ""                         # el administrador dijo que está bien
+    j["baseDetalle"] = (ficha.get("base_detalle") or "") if j["compartido"] else ""
+    j["avisoCompartir"] = (ficha.get("aviso") or "") if j["compartido"] else ""                 # para el gestor                         # el administrador dijo que está bien

@@ -218,6 +218,41 @@ def _sin_coincidencia(b: dict, fuente: str, sistema: str, ruta: Path, sha1: str,
             "detalle": f"No está en {fuente} (normal en romhacks, traducciones y homebrew)."}
 
 
+# ---------------- ¿es un juego publicado? (aviso al compartir) ----------------
+
+_HOMEBREW = re.compile(r"\b(Aftermarket|Homebrew|PD)\b", re.I)
+
+
+def identificar_publicado(sistema: str, nombre: str, sha: str | None) -> str | None:
+    """Si el contenido es (o modifica) un juego publicado según No-Intro/Redump,
+    el aviso para quien lo va a compartir; si no, None. Por el CONTENIDO, nunca
+    por el nombre. Solo AVISA: compartir lo decide el administrador (gestor.py).
+    Bloqueante: puede calcular el SHA-1 de varios GB."""
+    if sistema not in DATS:
+        return None
+    v = de(sha)
+    if v is None:
+        v = verificar(sistema, nombre)
+        if sha and not v.get("reintentar"):
+            _guardar(sha, v)
+    oficial = v.get("nombre") or ""
+    if v["estado"] in ("verificado", "dudoso", "otro_volcado") and oficial and not _HOMEBREW.search(oficial):
+        return f"Su contenido coincide con «{oficial}» ({v.get('fuente') or 'bases de volcados'}), un juego publicado."
+    b = base(sistema)
+    ruta = config.ROOT / sistema / nombre
+    if ruta.is_dir():
+        pistas = sorted(p for p in ruta.rglob("*") if p.is_file() and p.suffix.lower() in (".bin", ".iso"))
+        ruta = pistas[0] if pistas else None
+    cod = cabeceras.codigo(ruta, sistema) if ruta else None
+    if cod and b:
+        serie = cod[0].split(":", 1)[1]
+        oficiales = sorted(n for n in b["serie"].get(serie, {}) if n and not _HOMEBREW.search(n))
+        if oficiales:
+            return (f"Su cabecera lleva el código «{serie}» de «{oficiales[0]}», un juego publicado: es ese juego o una "
+                    "modificación suya (los ROM hacks y las traducciones contienen el juego original).")
+    return None
+
+
 # ---------------- en segundo plano ----------------
 
 def pendientes() -> list[tuple[str, str, str]]:

@@ -40,8 +40,10 @@ def inicializar() -> None:
         con.execute("""CREATE TABLE IF NOT EXISTS accesos (
                 id INTEGER PRIMARY KEY, token TEXT NOT NULL UNIQUE, nombre TEXT NOT NULL,
                 consola TEXT NOT NULL DEFAULT '', estado TEXT NOT NULL, creada REAL NOT NULL,
-                decidida REAL, usuario TEXT NOT NULL DEFAULT '', ultimo_uso REAL
+                decidida REAL, ultimo_uso REAL
             )""")
+        if "usuario" in {c["name"] for c in con.execute("PRAGMA table_info(accesos)")}:
+            con.execute("ALTER TABLE accesos DROP COLUMN usuario")       # no se guarda quién decide
 
 
 def _hash(token: str) -> str:
@@ -101,18 +103,18 @@ def valido(token: str) -> bool:
 def listar() -> list[dict]:
     with _conectar() as con:
         _limpiar(con)
-        filas = con.execute("SELECT id, nombre, consola, estado, creada, decidida, usuario, ultimo_uso FROM accesos "
+        filas = con.execute("SELECT id, nombre, consola, estado, creada, decidida, ultimo_uso FROM accesos "
                             "WHERE estado != 'rechazada' ORDER BY estado DESC, creada").fetchall()
     return [dict(f) for f in filas]
 
 
-def decidir(id_: int, accion: str, usuario: str) -> None:
+def decidir(id_: int, accion: str) -> None:
     """aceptar | rechazar (pendientes) · revocar (aceptadas: se borra)."""
     with _conectar() as con:
         if accion == "revocar":
             con.execute("DELETE FROM accesos WHERE id = ? AND estado = 'aceptada'", (id_,))
         elif accion in ("aceptar", "rechazar"):
-            con.execute("UPDATE accesos SET estado = ?, decidida = ?, usuario = ? WHERE id = ? AND estado = 'pendiente'",
-                        ("aceptada" if accion == "aceptar" else "rechazada", time.time(), usuario, id_))
+            con.execute("UPDATE accesos SET estado = ?, decidida = ? WHERE id = ? AND estado = 'pendiente'",
+                        ("aceptada" if accion == "aceptar" else "rechazada", time.time(), id_))
         else:
             raise Error("Acción desconocida.")
