@@ -123,51 +123,39 @@ public class MainActivity extends BaseActivity {
         public void run() {
             if (Math.abs(ejeScrollActual) < DEADZONE_STICK) {
                 scrollEnMarcha = false;
-                liberarListaTrasScroll();
+                seleccionarFilaCentral();
                 return;
             }
-            AbsListView listaActiva = vistaCuadricula ? cuadriculaJuegos : listaJuegos;
-            int distancia = (int) (ejeScrollActual * PIXELS_MAX_POR_TICK);
-            listaActiva.smoothScrollBy(distancia, INTERVALO_SCROLL_MS);
+            // scrollListBy mueve la lista al momento, sin animación ni estado
+            // de «fling» pendiente (smoothScrollBy lo dejaba a medias y la
+            // lista dejaba de aceptar toques y botones).
+            listaActiva().scrollListBy((int) (ejeScrollActual * PIXELS_MAX_POR_TICK));
             manejadorScroll.postDelayed(this, INTERVALO_SCROLL_MS);
         }
     };
 
+    private AbsListView listaActiva() {
+        return vistaCuadricula ? cuadriculaJuegos : listaJuegos;
+    }
+
     /**
-     * BUG REAL ENCONTRADO (dato del usuario: tras usar el stick para
-     * scrollear, los botones Instalar/Desinstalar dejan de responder tanto
-     * al tacto como al D-pad hasta reiniciar la app): smoothScrollBy() deja
-     * al AbsListView (ListView/GridView) en un estado interno de scroll/fling
-     * que normalmente cierra un dedo real al soltar (ACTION_UP) -- como el
-     * scroll por stick nunca pasa por un toque real, ese estado se queda a
-     * medias, y mientras dura, onInterceptTouchEvent() se cree que sigue en
-     * mitad de un gesto de scroll y no deja que el toque (ni, indirectamente,
-     * el foco de D-pad) llegue a los hijos. Se fuerza el cierre limpio con un
-     * ACTION_CANCEL sintético, exactamente lo que haría un dedo real al
-     * soltar el stick.
+     * Al soltar el stick con el mando en la lista, la selección pasa a la
+     * fila que ha quedado en el centro, sin mover la vista: así A actúa
+     * sobre lo que se ve y no sobre una fila que ya se fue de la pantalla.
      */
-    private void liberarListaTrasScroll() {
-        AbsListView listaActiva = vistaCuadricula ? cuadriculaJuegos : listaJuegos;
-        long ahora = android.os.SystemClock.uptimeMillis();
-        MotionEvent cancelacion = MotionEvent.obtain(ahora, ahora, MotionEvent.ACTION_CANCEL, 0f, 0f, 0);
-        listaActiva.onTouchEvent(cancelacion);
-        cancelacion.recycle();
-        // Log real (ver focus_log.txt de hoy): mientras el stick scrollea, el
-        // foco oscila varias veces por segundo entre el propio contenedor y
-        // la fila que en ese instante ocupa la posición en pantalla que tenía
-        // el foco antes de reciclar la vista -- efecto secundario conocido de
-        // AbsListView + hijos focusables + smoothScrollBy. Si la última
-        // oscilación deja el foco en el CONTENEDOR (no en ningún botón), el
-        // D-pad ya no tiene a quién mandarle las flechas -- navegar1D/2D solo
-        // están enganchados a los botones, no al contenedor. Se redirige al
-        // primer botón visible en ese caso.
-        boolean focoEnContenedor = listaActiva.isFocused();
-        if (focoEnContenedor) {
-            enfocarPrimeraFilaOCelda();
+    private void seleccionarFilaCentral() {
+        AbsListView lista = listaActiva();
+        if (!lista.hasFocus() || lista.isInTouchMode() || lista.getChildCount() == 0) {
+            return;
         }
-        // SOLO DEPURACIÓN TEMPORAL -- ver FocusDebugLogger, quitar tras el diagnóstico.
-        FocusDebugLogger.log("liberarListaTrasScroll: ACTION_CANCEL enviado a "
-                + (vistaCuadricula ? "cuadriculaJuegos" : "listaJuegos") + " focoEnContenedor=" + focoEnContenedor);
+        int centro = lista.getHeight() / 2;
+        for (int i = 0; i < lista.getChildCount(); i++) {
+            View hijo = lista.getChildAt(i);
+            if (hijo.getBottom() >= centro) {
+                lista.setSelectionFromTop(lista.getFirstVisiblePosition() + i, hijo.getTop());
+                return;
+            }
+        }
     }
 
     @Override
@@ -206,21 +194,26 @@ public class MainActivity extends BaseActivity {
         adapterFiltroInstalado.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerFiltroInstalado.setAdapter(adapterFiltroInstalado);
 
-        // SOLO DEPURACIÓN TEMPORAL -- diagnóstico real del D-pad sin ADB (ver
-        // FocusDebugLogger). Quitar todo esto en cuanto se resuelva el bug.
-        spinnerFiltroSistema.setOnFocusChangeListener((v, tieneFoco) -> FocusDebugLogger.log("spinnerFiltroSistema foco=" + tieneFoco));
-        campoFiltroNombre.setOnFocusChangeListener((v, tieneFoco) -> FocusDebugLogger.log("campoFiltroNombre foco=" + tieneFoco));
-        botonAlternarVista.setOnFocusChangeListener((v, tieneFoco) -> FocusDebugLogger.log("botonAlternarVista foco=" + tieneFoco));
-        listaJuegos.setOnFocusChangeListener((v, tieneFoco) -> FocusDebugLogger.log("listaJuegos (contenedor) foco=" + tieneFoco));
-        cuadriculaJuegos.setOnFocusChangeListener((v, tieneFoco) -> FocusDebugLogger.log("cuadriculaJuegos (contenedor) foco=" + tieneFoco));
-
-        // Deja que el foco de D-pad/mando entre en los botones Instalar/Desinstalar
-        // de cada fila (si no, el comportamiento por defecto de ListView impide
-        // que el foco aterrice en el botón en vez de en la fila entera). GridView
-        // no tiene este método -- no es un descuido, AbsListView (la superclase
-        // común) no lo declara, solo ListView lo añade -- comprobado con el
-        // compilador tras un intento fallido de llamarlo también en GridView.
-        listaJuegos.setItemsCanFocus(true);
+        // Mando: lo que se selecciona es la FILA/CELDA (selección nativa de
+        // ListView/GridView, que sobrevive al reciclaje de vistas y al
+        // desplazamiento); A o el centro de la cruceta la pulsa y, mantenido,
+        // elige idioma. El botón de cada fila no es enfocable: solo se toca.
+        // Antes el foco iba en ese botón, y al reciclar las filas se quedaba
+        // en una que ya enseñaba otro juego, o en ninguna.
+        for (AbsListView lista : new AbsListView[]{listaJuegos, cuadriculaJuegos}) {
+            lista.setOnItemClickListener((padre, vista, pos, id) -> {
+                // Un toque en la fila (fuera del botón) no hace nada, como siempre.
+                if (!padre.isInTouchMode()) {
+                    accionesJuego.onAccionInstalar((Juego) padre.getItemAtPosition(pos));
+                }
+            });
+            lista.setOnItemLongClickListener((padre, vista, pos, id) -> {
+                accionesJuego.onElegirIdioma((Juego) padre.getItemAtPosition(pos));
+                return true;
+            });
+            // Al entrar o salir de la lista hay que repintar el resaltado de la fila seleccionada.
+            lista.setOnFocusChangeListener((v, tieneFoco) -> v.requestLayout());
+        }
 
         findViewById(R.id.botonElegirCarpetaInicial).setOnClickListener(v -> lanzarSelectorCarpeta());
 
@@ -235,21 +228,12 @@ public class MainActivity extends BaseActivity {
             vistaCuadricula = !vistaCuadricula;
             aplicarVistaSeleccionada();
         });
-        // Punto de entrada explícito por D-pad desde CUALQUIERA de los 3
-        // controles de la fila de filtros hacia la lista/cuadrícula: el
-        // buscador de foco geométrico por defecto de Android no siempre
-        // encuentra el primer botón de una fila reciclada (mismo problema de
-        // fondo que ya resolvió navegar2D() en la cuadrícula, aquí para el
-        // salto inicial "de arriba hacia abajo").
-        View.OnKeyListener bajarALaListaConDpad = (v, keyCode, event) -> {
-            // SOLO DEPURACIÓN TEMPORAL -- ver FocusDebugLogger, quitar tras el diagnóstico.
-            FocusDebugLogger.log("bajarALaListaConDpad: origen=" + v.getClass().getSimpleName()
-                    + " keyCode=" + keyCode + " action=" + event.getAction());
-            if (event.getAction() == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                return enfocarPrimeraFilaOCelda();
-            }
-            return false;
-        };
+        // Bajar con la cruceta desde la fila de filtros entra en la lista o
+        // cuadrícula (el buscador de foco geométrico de Android a veces se
+        // lo salta).
+        View.OnKeyListener bajarALaListaConDpad = (v, keyCode, event) ->
+                event.getAction() == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                        && enfocarPrimeraFilaOCelda();
         spinnerFiltroSistema.setOnKeyListener(bajarALaListaConDpad);
         spinnerFiltroInstalado.setOnKeyListener(bajarALaListaConDpad);
         spinnerFiltroLibreria.setOnKeyListener(bajarALaListaConDpad);
@@ -616,10 +600,6 @@ public class MainActivity extends BaseActivity {
     private void copiarCaratulaAESDE(Juego juego, Runnable alTerminar) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || !Environment.isExternalStorageManager()
                 || juego.coverUrl == null) {
-            // SOLO DEPURACIÓN TEMPORAL -- ver FocusDebugLogger, quitar tras el diagnóstico.
-            FocusDebugLogger.log("copiarCaratulaAESDE: NO se intenta (sdk=" + Build.VERSION.SDK_INT
-                    + " manageStorage=" + (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager())
-                    + " coverUrl=" + juego.coverUrl + ")");
             alTerminar.run();
             return;
         }
@@ -628,8 +608,6 @@ public class MainActivity extends BaseActivity {
             try {
                 File carpetaCovers = carpetaCoversESDE(juego.sistema);
                 boolean carpetaOk = carpetaCovers.isDirectory() || carpetaCovers.mkdirs();
-                // SOLO DEPURACIÓN TEMPORAL -- ver FocusDebugLogger, quitar tras el diagnóstico.
-                FocusDebugLogger.log("copiarCaratulaAESDE: carpetaCovers=" + carpetaCovers.getAbsolutePath() + " ok=" + carpetaOk);
                 if (!carpetaOk) {
                     return;
                 }
@@ -646,8 +624,6 @@ public class MainActivity extends BaseActivity {
                     ApiClient.descargarAFichero(juego.base(baseUrl), juego.clave(token), juego.coverUrl, out);
                 }
                 String extension = extensionRealDeImagen(temporal);
-                // SOLO DEPURACIÓN TEMPORAL -- ver FocusDebugLogger, quitar tras el diagnóstico.
-                FocusDebugLogger.log("copiarCaratulaAESDE: temporal=" + temporal.length() + " bytes extension=" + extension);
                 if (extension == null) {
                     return;
                 }
@@ -667,10 +643,9 @@ public class MainActivity extends BaseActivity {
                 // real de bytes (funciona cruzando sistemas de ficheros) y
                 // luego se borra el temporal.
                 if (!copiarFichero(temporal, destino)) {
-                    FocusDebugLogger.log("copiarCaratulaAESDE: copia a " + destino.getAbsolutePath() + " FALLÓ");
+                    android.util.Log.w("RomLibrary", "No se pudo copiar la carátula a " + destino);
                     return;
                 }
-                FocusDebugLogger.log("copiarCaratulaAESDE: copiada a " + destino.getAbsolutePath());
                 temporal.delete();
                 temporal = null; // ya se copió y se borró, no volver a borrar en el finally
                 // Un fichero creado con java.io.File (MANAGE_EXTERNAL_STORAGE)
@@ -684,8 +659,7 @@ public class MainActivity extends BaseActivity {
                         new String[]{destino.getAbsolutePath()}, null, null);
             } catch (Exception e) {
                 // Best-effort -- el refresco de ES-DE se intenta igualmente.
-                // SOLO DEPURACIÓN TEMPORAL -- ver FocusDebugLogger, quitar tras el diagnóstico.
-                FocusDebugLogger.log("copiarCaratulaAESDE: excepción " + e);
+                android.util.Log.w("RomLibrary", "Carátula para ES-DE", e);
             } finally {
                 if (temporal != null) {
                     temporal.delete();
@@ -798,25 +772,19 @@ public class MainActivity extends BaseActivity {
     }
 
     /**
-     * Pone el foco de D-pad directamente en el botón Instalar/Desinstalar de
-     * la primera fila/celda visible de la vista activa. Devuelve false (deja
-     * el comportamiento por defecto) si todavía no hay ninguna fila real --
-     * ej. lista vacía o adaptador aún sin cargar.
+     * Lleva el foco del mando a la lista o cuadrícula activa, con la primera
+     * fila visible seleccionada si aún no había ninguna. Devuelve false si
+     * todavía no hay filas (lista vacía o sin cargar).
      */
     private boolean enfocarPrimeraFilaOCelda() {
-        AbsListView listaActiva = vistaCuadricula ? cuadriculaJuegos : listaJuegos;
-        int hijos = listaActiva.getChildCount();
-        // SOLO DEPURACIÓN TEMPORAL -- ver FocusDebugLogger, quitar tras el diagnóstico.
-        FocusDebugLogger.log("enfocarPrimeraFilaOCelda: vistaCuadricula=" + vistaCuadricula
-                + " hijosVisibles=" + hijos + " isInTouchMode=" + listaActiva.isInTouchMode());
-        if (hijos == 0) {
+        AbsListView lista = listaActiva();
+        if (lista.getChildCount() == 0 || !lista.requestFocus()) {
             return false;
         }
-        View primeraFila = listaActiva.getChildAt(0);
-        View botonInstalar = primeraFila.findViewById(R.id.botonInstalar);
-        boolean ok = botonInstalar != null && botonInstalar.requestFocus();
-        FocusDebugLogger.log("enfocarPrimeraFilaOCelda: botonInstalarEncontrado=" + (botonInstalar != null) + " requestFocus=" + ok);
-        return ok;
+        if (lista.getSelectedItemPosition() == AdapterView.INVALID_POSITION) {
+            lista.setSelection(lista.getFirstVisiblePosition());
+        }
+        return true;
     }
 
     private void lanzarSelectorCarpeta() {
@@ -872,7 +840,7 @@ public class MainActivity extends BaseActivity {
             // de esta Retroid llegan como ejes (AXIS_HAT_X/Y, AXIS_X/Y) en vez
             // de como KeyEvent KEYCODE_DPAD_* reales, se estaban descartando
             // aquí sin que nada los tradujera a navegación: de ahí que
-            // navegar1D/navegar2D (que solo escuchan KeyEvent real) nunca
+            // la navegación (que solo escucha KeyEvent real) nunca
             // llegaran a dispararse ni con D-pad ni con el stick izquierdo,
             // en ninguna ronda anterior, independientemente de cualquier
             // arreglo de foco.
@@ -881,8 +849,6 @@ public class MainActivity extends BaseActivity {
             ejeScrollActual = Math.abs(y) >= DEADZONE_STICK ? y : 0f;
             if (ejeScrollActual != 0f && !scrollEnMarcha) {
                 scrollEnMarcha = true;
-                // SOLO DEPURACIÓN TEMPORAL -- ver FocusDebugLogger, quitar tras el diagnóstico.
-                FocusDebugLogger.log("stick: empieza scroll (eje=" + ejeScrollActual + ")");
                 manejadorScroll.post(tickScroll);
             }
             return true;
@@ -947,25 +913,33 @@ public class MainActivity extends BaseActivity {
     }
 
     /**
-     * Convierte el "empujón" de eje en un KeyEvent sintético real y lo manda
-     * directo a la vista con foco actual -- exactamente el mismo camino
-     * (dispatchKeyEvent -> OnKeyListener) que seguiría una pulsación de
-     * hardware real, así que reutiliza navegar1D/navegar2D tal cual sin
-     * duplicar su lógica.
+     * Convierte el "empujón" de eje en una pulsación de cruceta para la
+     * vista con foco. Si esa vista no la usa (p.ej. subir desde la primera
+     * fila de la lista), el foco pasa a la vista vecina en esa dirección,
+     * como haría Android con una cruceta de verdad.
      */
     private void enviarTeclaDpadAlFoco(int keyCode) {
         View foco = getCurrentFocus();
-        // SOLO DEPURACIÓN TEMPORAL -- ver FocusDebugLogger, quitar tras el diagnóstico.
-        FocusDebugLogger.log("procesarEjesComoDpad: keyCode=" + keyCode
-                + " focoActual=" + (foco == null ? "null" : foco.getClass().getSimpleName()));
         if (foco == null) {
             return;
+        }
+        if (foco.isInTouchMode()) {
+            // Una cruceta de verdad saca a Android del modo táctil; esta tecla
+            // sintética no, y sin esto la lista no mostraría la selección.
+            foco.requestFocusFromTouch();
         }
         long ahora = android.os.SystemClock.uptimeMillis();
         boolean consumido = foco.dispatchKeyEvent(new KeyEvent(ahora, ahora, KeyEvent.ACTION_DOWN, keyCode, 0));
         foco.dispatchKeyEvent(new KeyEvent(ahora, ahora, KeyEvent.ACTION_UP, keyCode, 0));
-        // SOLO DEPURACIÓN TEMPORAL -- ver FocusDebugLogger, quitar tras el diagnóstico.
-        FocusDebugLogger.log("procesarEjesComoDpad: consumido=" + consumido);
+        if (!consumido) {
+            int direccion = keyCode == KeyEvent.KEYCODE_DPAD_UP ? View.FOCUS_UP
+                    : keyCode == KeyEvent.KEYCODE_DPAD_DOWN ? View.FOCUS_DOWN
+                    : keyCode == KeyEvent.KEYCODE_DPAD_LEFT ? View.FOCUS_LEFT : View.FOCUS_RIGHT;
+            View vecina = foco.focusSearch(direccion);
+            if (vecina != null) {
+                vecina.requestFocus(direccion);
+            }
+        }
     }
 
     /**
@@ -1313,6 +1287,18 @@ public class MainActivity extends BaseActivity {
             // botón ofrezca volver a descargarlo (descargar() ya borra el
             // existente antes de crear el nuevo).
             juego.instaladoLocal = local != null && (local.isDirectory() || local.length() > 0);
+        }
+    }
+
+    /** Actualiza solo la barra de progreso de las filas visibles de ese juego (ver JuegoAdapter.pintarProgreso). */
+    private void pintarProgresoVisible(Juego juego) {
+        for (AbsListView lista : new AbsListView[]{listaJuegos, cuadriculaJuegos}) {
+            for (int i = 0; i < lista.getChildCount(); i++) {
+                View fila = lista.getChildAt(i);
+                if (fila.getTag() == juego) {
+                    JuegoAdapter.pintarProgreso(fila, juego);
+                }
+            }
         }
     }
 
@@ -1668,7 +1654,7 @@ public class MainActivity extends BaseActivity {
                 ultimoPost = ahora;
                 juego.bytesDescargados = descargado;
                 juego.bytesTotal = total;
-                runOnUiThread(MainActivity.this::refrescarAdaptadores);
+                runOnUiThread(() -> pintarProgresoVisible(juego));
             }
         };
     }

@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Estado enfocado (mando/D-pad): verde fosforo CRT, igual que el acento de
+<!-- Fila/celda seleccionada con el mando (state_selected: la selección es de
+     la fila, que la propaga al botón): verde fosforo CRT, igual que el acento de
      la web. Sin foco: fondo oscuro con borde, mismo estilo que los botones
      "activos" de la web (fondo #1c3a24, borde/texto #7bffb0). -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_focused="true">
+    <item android:state_selected="true">
         <shape android:shape="rectangle">
             <solid android:color="#7bffb0" />
             <corners android:radius="6dp" />

@@ -154,10 +154,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:divider="#3a4a3a"
-                android:dividerHeight="1dp" />
+                android:dividerHeight="1dp"
+                android:listSelector="@android:color/transparent" />
 
             <GridView
                 android:id="@+id/cuadriculaJuegos"
+                android:listSelector="@android:color/transparent"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:visibility="gone"
