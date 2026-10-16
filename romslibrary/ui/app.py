@@ -194,6 +194,9 @@ class App:
             self.dialogos.append(Confirmar("Desinstalar", f"¿Quitar «{j.fichero}» de esta consola? Antes se suben "
                                            "sus partidas al servidor.", "Desinstalar",
                                            lambda: self._en_hilo(self._desinstalar, j)))
+        elif not j.descargable:
+            self.dialogos.append(Mensaje("Archivo corrupto", f"La librería ha comprobado que «{j.fichero}» es un archivo "
+                                         f"corrupto y no lo sirve hasta que suba una versión buena.\n\n{j.motivo_corrupto}"))
         elif j.corrupto:
             texto = (f"La verificación automática de la librería sospecha que «{j.fichero}» está corrupto (nadie lo "
                      "ha comprobado aún)" if j.corrupto_automatico else
@@ -507,7 +510,8 @@ class App:
                 if isinstance(self.dialogos[-1], Teclado) else []))
         else:
             actual = self.visibles[self.sel] if self.visibles else None
-            tema.ayuda(sup, [("A", "Desinstalar" if actual and actual.instalado else "Instalar"), ("Y", "Idioma"),
+            tema.ayuda(sup, [("A", "Desinstalar" if actual and actual.instalado else "Instalar" if not actual or actual.descargable
+                                   else "No disponible"), ("Y", "Idioma"),
                              ("X", "Buscar"), ("L/R", "Consola"), ("Select", "Filtro"), ("Start", "Menú"),
                              ("B", "Salir")])
 
