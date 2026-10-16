@@ -35,6 +35,10 @@ DB_PATH = DATOS / "romslibrary.db"
 # servicio de origen (sund.es mantiene siempre la oficial y pública).
 APK_PATH = APK_DIR / "RomsLibrary.apk"
 APK_VERSION = APK_DIR / "version.json"
+# App para consolas Linux, Steam Deck y Windows (cliente/ del monorepo): un
+# paquete por plataforma y version.json con su versión y SHA-256 (lo escribe
+# cliente/empaquetado/publicar.sh). Solo lo publica el servicio de origen.
+CLIENTE_DIR = DATOS / "cliente"
 APK_ORIGEN = os.environ.get("ROMSLIBRARY_APK_ORIGEN", "https://sund.es").rstrip("/")
 
 # Gestor web: lo protege Authentik delante (proxy inverso con forward-auth).

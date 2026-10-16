@@ -15,6 +15,7 @@ cualquier servicio RomsLibrary: solo cambia la URL y la clave de acceso.
   origen (ROMSLIBRARY_APK_ORIGEN, sund.es): la app es igual para todos.
 """
 
+import json
 import secrets
 import time
 
@@ -31,7 +32,7 @@ import main as nucleo
 router = APIRouter()
 
 RUTA = "/APIs/RomLibraryApp"
-ACCIONES_PUBLICAS = {"version", "apk"}
+ACCIONES_PUBLICAS = {"version", "apk", "cliente_version", "cliente"}
 
 
 def _clave_valida(request: Request) -> bool:
@@ -129,6 +130,10 @@ async def api_app(request: Request):
             return await _version()
         if accion == "apk":
             return await _apk()
+        if accion == "cliente_version":
+            return _cliente_version()
+        if accion == "cliente":
+            return _cliente(_param(q, "paquete"))
         # Consolas registradas (android_id + identificador).
         if accion == "consola_estado":
             return nucleo.consola_estado(I, T, android_id=_param(q, "android_id"),
@@ -216,6 +221,35 @@ async def _apk():
     if "content-length" in respuesta.headers:
         cabeceras["Content-Length"] = respuesta.headers["content-length"]
     return StreamingResponse(trozos(), media_type="application/vnd.android.package-archive", headers=cabeceras)
+
+
+# ---------- App para Linux / Steam Deck / Windows ----------
+
+def _cliente_info() -> dict:
+    try:
+        return json.loads((config.CLIENTE_DIR / "version.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise HTTPException(status_code=404, detail="App no publicada en este servicio.") from None
+
+
+def _cliente_version():
+    info = _cliente_info()
+    return {"version": info["version"],
+            "paquetes": {k: {"sha256": v["sha256"], "tamano": v["tamano"]} for k, v in info["paquetes"].items()},
+            "instalar": info.get("instalar", {})}
+
+
+def _cliente(paquete: str):
+    """Paquete de actualización (o de instalación, «-instalar») de una plataforma."""
+    info = _cliente_info()
+    base, instalar = paquete.removesuffix("-instalar"), paquete.endswith("-instalar")
+    datos = (info.get("instalar", {}) if instalar else info["paquetes"]).get(base)
+    if not datos:
+        raise HTTPException(status_code=404, detail="Paquete desconocido.")
+    ruta = config.CLIENTE_DIR / datos["fichero"]
+    if not ruta.is_file() or "/" in datos["fichero"]:
+        raise HTTPException(status_code=404, detail="Paquete no disponible.")
+    return FileResponse(ruta, media_type="application/octet-stream", filename=datos["fichero"])
 
 
 def _origen_apk_util() -> bool:
