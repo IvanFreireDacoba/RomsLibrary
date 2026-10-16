@@ -2,4 +2,4 @@
 Windows (ROG Ally): el mismo catálogo y las mismas partidas que la app de
 Android, con una interfaz para mando."""
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"

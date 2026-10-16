@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pygame
 
-from .. import VERSION, actualizar_roms, api, autoactualizar, catalogo, guardados, instalador, partidas, plataforma
+from .. import VERSION, acceso, actualizar_roms, api, autoactualizar, catalogo, guardados, instalador, partidas, plataforma
 from ..ajustes import Ajustes, carpeta_datos
 from . import tema
 from .dialogos import Confirmar, Lista, Mensaje, SelectorCarpeta, Teclado
@@ -90,6 +90,12 @@ class App:
                 partidas.recuperar(self.ajustes)
                 self.aviso(f"Consola: {self.ajustes.nombre_consola} ({self.ajustes.identificador})", tema.ACENTO)
             self._avisar_solicitudes()
+            r = acceso.comprobar(self.ajustes)
+            if r:
+                self.aviso("Acceso concedido: ya ves la librería entera" if r == "aceptada"
+                           else "La librería no ha aceptado la solicitud de acceso", tema.ACENTO if r == "aceptada" else tema.AVISO)
+                if r == "aceptada":
+                    self.cargar()
         except (api.ErrorApi, KeyError, TypeError) as e:
             self.aviso(f"No se pudo registrar la consola: {e}", tema.AVISO)
         self.sincronizar_partidas(silencioso=True)
@@ -365,15 +371,20 @@ class App:
             f"Versión {VERSION} · {p.nombre} ({plataforma.arquitectura()})\n"
             f"Servidor: {self.ajustes['url']}\n"
             f"Consola: {self.ajustes.nombre_consola or '—'} ({self.ajustes.identificador or 'sin registrar'})\n"
-            f"ROMs: {self.ajustes['roms']}")))
+            f"ROMs: {self.ajustes['roms']}\n\n"
+            "Software libre (MIT). No incluye juegos: instala solo los que tengas derecho a usar. "
+            "Aviso legal: sund.es/romslibrary/aviso-legal. Nintendo, PlayStation, Xbox, Steam y los demás "
+            "nombres son marcas de sus dueños; proyecto independiente.")))
 
     def abrir_ajustes(self) -> None:
         a = self.ajustes
         p = a.plataforma
         opciones = [
             (f"Servidor: {a['url']}", lambda: self.dialogos.append(Teclado("Servidor (https://…)", a["url"], self._fijar_url))),
-            ("Clave de acceso: " + ("••••••" if a["clave"] else "(librería pública)"),
+            ("Clave de acceso: " + ("••••••" if a["clave"] else "(sin clave: solo los juegos compartidos)"),
              lambda: self.dialogos.append(Teclado("Clave de acceso", a["clave"], self._fijar_clave, oculto=True))),
+            ("Solicitar acceso a esta librería" + (" (pendiente)" if acceso.pendiente(a) else ""),
+             lambda: self._en_hilo(self._solicitar_acceso)),
             (f"Nombre de la consola: {a.nombre_consola or '—'}",
              lambda: self.dialogos.append(Teclado("Nombre de la consola", a.nombre_consola, self._fijar_nombre))),
             (f"Carpeta ROMs: {a['roms']}",
@@ -400,6 +411,15 @@ class App:
         self.ajustes["url"] = url
         self._en_hilo(self._al_empezar)
         self.cargar()
+
+    def _solicitar_acceso(self) -> None:
+        try:
+            if not self.ajustes.identificador:
+                partidas.recuperar(self.ajustes)
+            acceso.solicitar(self.ajustes)
+            self.aviso("Solicitud enviada: cuando el administrador la acepte verás la librería entera", tema.ACENTO)
+        except api.ErrorApi as e:
+            self.aviso(f"No se pudo enviar: {e}", tema.ERROR)
 
     def _fijar_clave(self, clave: str) -> None:
         self.ajustes["clave"] = clave.strip()

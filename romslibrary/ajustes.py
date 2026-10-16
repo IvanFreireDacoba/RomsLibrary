@@ -55,7 +55,7 @@ class Ajustes:
                              ("partidas", self.plataforma.carpeta_partidas), ("carpetas", {}),
                              ("todas_las_consolas", False), ("vista", "lista"),
                              ("url_partidas", PARTIDAS_POR_DEFECTO), ("identificador", None),
-                             ("nombre_consola", ""), ("token_partidas", None)):
+                             ("nombre_consola", ""), ("token_partidas", None), ("accesos_pendientes", {})):
             if clave not in self.d:
                 self.d[clave] = valor
                 cambiado = True
