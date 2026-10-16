@@ -40,11 +40,18 @@ su enlace, con el SHA comprobado; si el enlace falla, de la librería.
 
 ### Partidas
 
-Con la consola registrada, las partidas y los *save states* se guardan en la
-librería al abrir la app y al desinstalar un juego, y se recuperan al
-instalarlo (gana siempre la copia más reciente). Desde *Sincronizar consolas*
-puedes vincular otra consola tuya para compartir partidas: la otra tiene que
-aceptarlo, y puedes desvincular o bloquear cuando quieras.
+Con la consola registrada, las partidas y los *save states* se guardan al
+abrir la app y al desinstalar un juego, y se recuperan al instalarlo (gana
+siempre la copia más reciente). Van al **servicio de partidas** de sund.es
+(`https://sund.es/partidas/`), aparte de las librerías: no dependen de la
+librería de la que venga el juego, aunque cierre o pase a privada. El
+ANDROID_ID es la contraseña de la consola: solo viaja ahí (por HTTPS) y se
+guarda como HMAC; las librerías nunca lo ven.
+
+Desde *Sincronizar consolas* puedes vincular otra consola tuya (Android, o
+Linux/Steam Deck/Windows con [RomsLibrary-Cliente](https://github.com/IvanFreireDacoba/RomsLibrary-Cliente))
+para compartir partidas: la otra tiene que aceptarlo, y puedes desvincular o
+bloquear cuando quieras.
 
 ## Compilar
 
