@@ -1,57 +1,61 @@
-# Aviso legal y uso responsable
+# Aviso legal y normas de uso
 
-RomsLibrary es software libre distribuido bajo la licencia MIT (ver
-[LICENSE](LICENSE)). Sirve para gestionar una librería de juegos que
-administra cada persona en su propio servidor, instalarlos en sus consolas y
-sincronizar sus partidas guardadas entre dispositivos.
+## Qué es RomsLibrary
 
-## Qué incluye y qué no
+RomsLibrary es software libre (licencia MIT, ver [LICENSE](LICENSE)) que
+ofrece:
 
-- Este repositorio contiene solo código. **No incluye ni proporciona ROMs,
-  videojuegos, BIOS, firmware, claves de consola ni otros contenidos
-  protegidos de terceros**, ni enlaces a fuentes de ellos.
-- El software permite que cada administrador **suba** a su servidor los
-  ficheros que él decida. Esos ficheros se alojan en el servidor de quien los
-  sube y se descargan directamente de él; no pasan por los autores de este
-  proyecto.
-- La licencia MIT cubre únicamente este código. **No concede ningún derecho**
-  sobre videojuegos, ROMs, BIOS, firmware, carátulas, música, marcas ni otros
-  contenidos de terceros.
+- **Un sistema para ordenar y mantener una librería de juegos propia**, que
+  cada persona instala en su servidor, y unas apps (Android; Linux, Steam Deck
+  y Windows; Wii) para llevar esos juegos a sus consolas.
+- **Sincronización de partidas entre consolas** y almacenamiento de sus datos
+  de guardado.
+- **Un sistema de publicación de juegos fanmade**, para que sus creadores
+  publiquen gratis, y para cualquier consola, **sus** juegos. Con el sistema de
+  enlaces, el juego se descarga desde la web de su autor: las descargas y las
+  métricas se quedan en su web y no pasan al servidor de RomsLibrary. La
+  librería guarda una copia de respaldo que solo se usa si el enlace del autor
+  deja de funcionar o ya no da el mismo fichero.
 
-## Cómo se comparte (y cómo no)
+RomsLibrary contiene solo código. **No incluye ni proporciona ROMs,
+videojuegos, BIOS, firmware, claves de consola ni otros contenidos protegidos
+de terceros**, ni enlaces a fuentes de ellos. La licencia MIT cubre únicamente
+este código y **no concede ningún derecho** sobre videojuegos, carátulas,
+música, marcas ni otros contenidos de terceros.
+
+## Normas de uso
+
+1. **No está permitido publicar como públicos juegos con copyright** de
+   terceros. «Compartido» es solo para juegos que publica su propio autor o su
+   titular, o con una licencia libre o un permiso expreso que lo permita.
+2. **Todos los juegos privados deben obtenerse de manera legítima**: por
+   ejemplo, la copia de seguridad de un original que tienes. Tener un original
+   no autoriza a descargar la copia de otra persona, y una copia de seguridad
+   es solo para su dueño.
+3. **Dar acceso a una librería es dar sus juegos.** Da acceso solo a tus
+   propias consolas, salvo para juegos que puedas distribuir.
+4. **No nos responsabilizamos de cualquier uso contrario a estas normas.**
+   Cada usuario y cada administrador de una librería es responsable de lo que
+   guarda, publica y comparte, y de atender las reclamaciones sobre ello.
+
+## Cómo se publica (y cómo no)
 
 - Las librerías nacen **privadas**: sin su clave no se ve nada.
 - Cada juego es **«Solo para mí»** o **«Compartido»**, y hay que elegirlo
-  siempre al subirlo; por defecto, «Solo para mí». Compartir exige declarar
-  por qué se puede compartir: homebrew o juego propio, licencia libre (cuál),
-  permiso del titular (de quién), fan game original o enlace a la web de su
-  autor. Si el contenido coincide con un juego publicado (bases No-Intro y
-  Redump), el gestor lo avisa y pide confirmar expresamente que tienes derecho
-  a distribuirlo; nunca lo impide. Ni la declaración ni la confirmación se
-  asocian a una persona: la decisión, y su responsabilidad, son de quien
-  comparte.
-- Si una librería es **pública**, cualquiera ve y descarga **solo sus juegos
-  compartidos**, y solo esos se comparten con otras librerías públicas. Los
-  juegos «Solo para mí» no salen nunca de la librería.
-- La librería entera (también lo «Solo para mí») solo la ven quienes tienen su
-  clave o las consolas que su administrador **acepta una a una** desde el
-  gestor («Solicitar acceso» en la app). Cada acceso se puede quitar en
+  siempre al subirlo; por defecto, «Solo para mí». Para compartir hay que
+  declarar por qué se puede: juego propio, licencia libre (cuál), permiso del
+  titular (de quién), fan game original o enlace a la web de su autor.
+- Si el contenido coincide con un juego publicado (bases No-Intro y Redump), el
+  gestor lo avisa y pide confirmar expresamente que se tiene derecho a
+  distribuirlo. Ni la declaración ni la confirmación se asocian a una persona:
+  la decisión, y su responsabilidad, son de quien publica.
+- Una librería **pública** solo enseña y comparte con otras librerías públicas
+  sus juegos «Compartidos». Los juegos «Solo para mí» no salen nunca de la
+  librería, salvo a quien tenga su clave o a las consolas que su administrador
+  acepte una a una («Solicitar acceso»); cada acceso se puede quitar en
   cualquier momento.
-
-## Tus responsabilidades
-
-- Usa solo ficheros que tengas derecho a obtener, guardar y usar. Tener el
-  juego original no autoriza por sí solo a descargar una copia de otra
-  persona, y una copia de seguridad de tu original es para tu uso, no para
-  compartirla.
-- Comparte («Compartido», o dando acceso a tu librería) solo lo que tengas
-  derecho a distribuir. Dar acceso a otras personas a juegos que no puedes
-  compartir es distribuirlos, aunque sean pocas; da acceso solo a tus propias
-  consolas. Un ROM hack ya parcheado contiene el juego original: comparte el
-  parche o el enlace de su autor.
-- Lo que declares al compartir es responsabilidad tuya. Cada administrador
-  responde del contenido de su librería y de atender las reclamaciones sobre
-  él.
+- Un ROM hack ya parcheado contiene el juego original: se publica el parche o
+  el enlace de su autor, no el juego parcheado.
 
 ## Servicios que funcionan en sund.es
 
@@ -76,16 +80,16 @@ Si crees que una librería del índice, o contenido servido desde sund.es,
 infringe tus derechos, escribe a support@sund.es indicando quién eres, qué
 derechos ostentas, la librería y el contenido concreto (dirección exacta) y
 por qué consideras que es ilícito. Revisamos cada notificación concreta y
-podemos retirar una librería del índice; las decisiones se motivan y se
-registran. No supervisamos de forma general el contenido de las librerías de
-terceros.
+podemos retirar el contenido o la librería del índice; las decisiones se
+motivan y se registran. No supervisamos de forma general el contenido de las
+librerías de terceros.
 
 ## Alcance de este aviso
 
-Este aviso describe la finalidad y la política de uso del proyecto. No es
+Este aviso describe la finalidad y las normas de uso del proyecto. No es
 asesoramiento jurídico ni garantiza que cualquier uso del software sea legal
-en cualquier jurisdicción. No pretende excluir responsabilidades que no
-puedan excluirse legalmente ni sustituye las obligaciones legales aplicables.
+en cualquier jurisdicción. La exclusión de responsabilidad se aplica en la
+medida en que la ley lo permita.
 
 Nintendo, PlayStation, Xbox, Steam, Retroid, RetroArch, ES-DE y los demás
 nombres citados son marcas de sus respectivos titulares. Este es un proyecto
