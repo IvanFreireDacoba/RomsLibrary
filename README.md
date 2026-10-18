@@ -108,7 +108,14 @@ Python + pygame-ce, empaquetado con PyInstaller.
   descargas). No incluye juegos, BIOS ni firmwares, ni dice dónde conseguirlos.
 - **No está permitido publicar como públicos («Compartido») juegos con
   copyright** de terceros: solo los de su propio autor o titular, o con
-  licencia libre o permiso. Dar acceso a tu librería también es compartir.
+  licencia libre o permiso. Un fan game, solo si es 100 % original (sin
+  código, personajes, música ni marcas de terceros); un ROM hack o una
+  traducción ya aplicados no se pueden publicar. Dar acceso a tu librería
+  también es compartir.
+- **De todo juego que publiques se guarda una copia de seguridad** en la
+  librería donde lo compartes (también de los que se descargan de la web de
+  su autor; se sirve si su enlace deja de funcionar). Publicarlo, y esa copia,
+  son responsabilidad tuya.
 - **Todos los juegos privados deben obtenerse de manera legítima** (p. ej., la
   copia de seguridad de un original tuyo, que es solo para ti).
 - **No nos responsabilizamos de cualquier uso contrario a estas normas**: cada
