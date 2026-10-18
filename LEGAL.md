@@ -14,7 +14,7 @@ ofrece:
   publiquen gratis, y para cualquier consola, **sus** juegos. Con el sistema de
   enlaces, el juego se descarga desde la web de su autor: las descargas y las
   métricas se quedan en su web y no pasan al servidor de RomsLibrary. La
-  librería guarda una copia de respaldo que solo se usa si el enlace del autor
+  librería guarda una copia de seguridad que solo se usa si el enlace del autor
   deja de funcionar o ya no da el mismo fichero.
 
 RomsLibrary contiene solo código. **No incluye ni proporciona ROMs,
@@ -27,14 +27,22 @@ música, marcas ni otros contenidos de terceros.
 
 1. **No está permitido publicar como públicos juegos con copyright** de
    terceros. «Compartido» es solo para juegos que publica su propio autor o su
-   titular, o con una licencia libre o un permiso expreso que lo permita.
-2. **Todos los juegos privados deben obtenerse de manera legítima**: por
+   titular, o con una licencia libre o un permiso expreso que lo permita. Un
+   fan game solo se puede publicar si es **100 % original**: sin código,
+   personajes, música ni marcas de terceros. Un ROM hack o una traducción ya
+   aplicados contienen el juego original y no se pueden publicar.
+2. **De todo juego que publiques se guarda una copia de seguridad** en el
+   servicio (en la librería donde lo compartes), también de los que se
+   descargan desde la web de su autor; esa copia se sirve si su enlace deja de
+   funcionar. Publicar un juego, y que se guarde y se sirva esa copia, es
+   responsabilidad de quien lo publica.
+3. **Todos los juegos privados deben obtenerse de manera legítima**: por
    ejemplo, la copia de seguridad de un original que tienes. Tener un original
    no autoriza a descargar la copia de otra persona, y una copia de seguridad
    es solo para su dueño.
-3. **Dar acceso a una librería es dar sus juegos.** Da acceso solo a tus
+4. **Dar acceso a una librería es dar sus juegos.** Da acceso solo a tus
    propias consolas, salvo para juegos que puedas distribuir.
-4. **No nos responsabilizamos de cualquier uso contrario a estas normas.**
+5. **No nos responsabilizamos de cualquier uso contrario a estas normas.**
    Cada usuario y cada administrador de una librería es responsable de lo que
    guarda, publica y comparte, y de atender las reclamaciones sobre ello.
 
@@ -44,7 +52,8 @@ música, marcas ni otros contenidos de terceros.
 - Cada juego es **«Solo para mí»** o **«Compartido»**, y hay que elegirlo
   siempre al subirlo; por defecto, «Solo para mí». Para compartir hay que
   declarar por qué se puede: juego propio, licencia libre (cuál), permiso del
-  titular (de quién), fan game original o enlace a la web de su autor.
+  titular (de quién), fan game 100 % original o enlace a la web de su autor
+  (publicado por su propio autor).
 - Si el contenido coincide con un juego publicado (bases No-Intro y Redump), el
   gestor lo avisa y pide confirmar expresamente que se tiene derecho a
   distribuirlo. Ni la declaración ni la confirmación se asocian a una persona:
@@ -54,8 +63,6 @@ música, marcas ni otros contenidos de terceros.
   librería, salvo a quien tenga su clave o a las consolas que su administrador
   acepte una a una («Solicitar acceso»); cada acceso se puede quitar en
   cualquier momento.
-- Un ROM hack ya parcheado contiene el juego original: se publica el parche o
-  el enlace de su autor, no el juego parcheado.
 
 ## Servicios que funcionan en sund.es
 
