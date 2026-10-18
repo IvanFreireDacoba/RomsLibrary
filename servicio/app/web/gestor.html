@@ -849,10 +849,11 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 <div class="rl-vis" id="rl-vis">
                     <label class="rl-vis-op"><input type="radio" name="rl-vis" value="privado" checked>
                         <span><strong>Solo para mí</strong> (privado): solo lo ven las consolas con acceso a esta librería
-                        (su clave o una consola que hayas aceptado).</span></label>
+                        (su clave o una consola que hayas aceptado). Tiene que ser un juego obtenido de manera legítima
+                        (p. ej., la copia de seguridad de tu original).</span></label>
                     <label class="rl-vis-op"><input type="radio" name="rl-vis" value="compartido">
                         <span><strong>Compartido</strong>: si la librería es pública lo ve cualquiera y se comparte con las
-                        otras librerías públicas.</span></label>
+                        otras librerías públicas. No está permitido con juegos con copyright de terceros.</span></label>
                     <div class="rl-vis-compartir" style="display:none;">
                         <select class="rl-vis-base">
                             <option value="">¿Por qué se puede compartir?</option>
@@ -950,7 +951,8 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         <h2 style="color:#ff6b6b;">⚠ Parece un juego publicado</h2>
         <p id="rl-aviso-texto" style="color:#ffb3b3;"></p>
         <p>Por su <strong>contenido</strong> (no por su nombre), este fichero coincide con un juego publicado según las
-            bases de volcados No-Intro/Redump. Compartir un juego publicado sin permiso de su titular es ilegal en
+            bases de volcados No-Intro/Redump. <strong>No está permitido publicar como públicos juegos con
+            copyright.</strong> Compartir un juego publicado sin permiso de su titular es ilegal en
             España y en muchos otros países, aunque sea gratis. Si es tuyo, libre o tienes permiso, puedes compartirlo:
             la decisión y la responsabilidad son tuyas. Mientras no lo confirmes, se queda «Solo para mí».</p>
         <label class="rl-vis-op"><input type="checkbox" id="rl-aviso-confirmo">
@@ -993,10 +995,11 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 <div class="rl-vis" id="rl-edit-vis">
                     <label class="rl-vis-op"><input type="radio" name="rl-edit-vis" value="privado" checked>
                         <span><strong>Solo para mí</strong> (privado): solo lo ven las consolas con acceso a esta librería
-                        (su clave o una consola que hayas aceptado).</span></label>
+                        (su clave o una consola que hayas aceptado). Tiene que ser un juego obtenido de manera legítima
+                        (p. ej., la copia de seguridad de tu original).</span></label>
                     <label class="rl-vis-op"><input type="radio" name="rl-edit-vis" value="compartido">
                         <span><strong>Compartido</strong>: si la librería es pública lo ve cualquiera y se comparte con las
-                        otras librerías públicas.</span></label>
+                        otras librerías públicas. No está permitido con juegos con copyright de terceros.</span></label>
                     <div class="rl-vis-compartir" style="display:none;">
                         <select class="rl-vis-base">
                             <option value="">¿Por qué se puede compartir?</option>
@@ -2244,9 +2247,13 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             'Vas a hacer PÚBLICA esta librería.\n\n' +
             '· Su catálogo y sus juegos podrá verlos y descargarlos, sin clave, cualquiera que use la app ' +
             'y todas las demás librerías públicas del índice.\n' +
-            '· Tú eres el responsable de lo que compartes. Comparte solo juegos que tengas derecho a distribuir ' +
-            '(homebrew, juegos libres o con permiso del titular). Distribuir copias de juegos comerciales sin ' +
-            'permiso es ilegal en España y en muchos otros países, aunque sea gratis.\n' +
+            '· Solo se publica lo que marques como «Compartido». NO está permitido publicar como públicos juegos ' +
+            'con copyright: solo juegos propios (p. ej., tus fan games), con licencia libre o con permiso del ' +
+            'titular. Distribuir copias de juegos comerciales sin permiso es ilegal en España y en muchos otros ' +
+            'países, aunque sea gratis.\n' +
+            '· Los juegos «Solo para mí» deben haberse obtenido de manera legítima.\n' +
+            '· Tú eres el responsable de lo que publicas y compartes; RomsLibrary no se responsabiliza de los usos ' +
+            'contrarios a estas normas.\n' +
             '· Si un titular de derechos te pide retirar algo, retíralo o vuelve a hacer privada la librería. ' +
             'El índice puede retirar librerías que reciban avisos.\n' +
             '· Más información: https://sund.es/romslibrary/aviso-legal\n\n' +
