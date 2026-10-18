@@ -352,7 +352,7 @@ def lista_accesos(usuario: str = Usuario):
 async def decidir_acceso(request: Request, usuario: str = Usuario):
     datos = await request.json()
     try:
-        accesos.decidir(int(datos.get("id") or 0), str(datos.get("accion", "")))
+        accesos.decidir(int(datos.get("id") or 0), str(datos.get("accion", "")), datos.get("nombre"))
     except accesos.Error as e:
         return _error(HTTPException(400, str(e)))
     return _ok(accesos.listar())

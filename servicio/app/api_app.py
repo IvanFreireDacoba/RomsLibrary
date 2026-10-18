@@ -223,9 +223,10 @@ def _cliente(paquete: str):
 # ---------- App para Wii (Homebrew Channel) ----------
 
 def _wii_info() -> dict:
-    """{"version", "ficheros": {nombre: {sha256, tamano}}, "instalar": {...}}: la app
-    se actualiza fichero a fichero (boot.dol, meta.xml, icon.png); el zip de
-    «instalar» es para la primera vez (se descomprime en la raíz de la SD)."""
+    """{"version", "ficheros": {nombre: {sha256, tamano}}, "instalar": {...}, "canal": {...}}:
+    la app se actualiza fichero a fichero (boot.dol, meta.xml, icon.png); el zip de
+    «instalar» es para la primera vez (se descomprime en la raíz de la SD) y el WAD
+    de «canal» la pone en el menú de Wii (abre el boot.dol de la SD)."""
     try:
         return json.loads((config.WII_DIR / "version.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -234,7 +235,8 @@ def _wii_info() -> dict:
 
 def _wii_fichero(nombre: str):
     info = _wii_info()
-    publicados = {**info.get("ficheros", {}), info.get("instalar", {}).get("fichero", ""): {}}
+    publicados = {**info.get("ficheros", {}), info.get("instalar", {}).get("fichero", ""): {},
+                  info.get("canal", {}).get("fichero", ""): {}}
     if nombre not in publicados or not nombre or "/" in nombre:
         raise HTTPException(status_code=404, detail="Fichero desconocido.")
     ruta = config.WII_DIR / nombre

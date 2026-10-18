@@ -1880,13 +1880,20 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 + botones.map(([accion, texto]) => '<button class="rl-btn rl-btn-secundario" data-id="' + a.id + '" data-accion="' + accion + '">' + texto + '</button>').join('') + '</div>';
             cont.innerHTML = (pendientes.length ? '<strong>Consolas que piden acceso a toda la librería</strong>'
                 + '<p class="rl-ayuda">Al aceptar, esa consola verá y descargará también los juegos «solo para mí». Da acceso solo a tus consolas: dar a otras personas juegos que no tienes derecho a compartir es distribuirlos, aunque sean pocas.</p>'
-                + pendientes.map((a) => fila(a, [['aceptar', 'Aceptar'], ['rechazar', 'Rechazar']])).join('') : '')
+                + pendientes.map((a) => fila(a, [['aceptar', 'Aceptar'], ['rechazar', 'Rechazar'], ['renombrar', 'Cambiar nombre']])).join('') : '')
                 + (aceptadas.length ? '<details' + (pendientes.length ? '' : ' open') + '><summary>Consolas con acceso (' + aceptadas.length + ')</summary>'
-                + aceptadas.map((a) => fila(a, [['revocar', 'Quitar acceso']])).join('') + '</details>' : '');
+                + aceptadas.map((a) => fila(a, [['renombrar', 'Cambiar nombre'], ['revocar', 'Quitar acceso']])).join('') + '</details>' : '');
             cont.querySelectorAll('button[data-id]').forEach((b) => b.addEventListener('click', async () => {
                 if (b.dataset.accion === 'revocar' && !confirm('¿Quitar el acceso a esta consola?')) return;
-                await rlFetch('api/accesos', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                              body: JSON.stringify({ id: Number(b.dataset.id), accion: b.dataset.accion }) });
+                let nombre;
+                if (b.dataset.accion === 'renombrar') {
+                    const actual = (lista.find((a) => a.id === Number(b.dataset.id)) || {}).nombre || '';
+                    nombre = prompt('Nombre de esta consola (solo lo ves tú, hasta 40 caracteres):', actual);
+                    if (nombre === null || !nombre.trim() || nombre.trim() === actual) return;
+                }
+                const r = await (await rlFetch('api/accesos', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({ id: Number(b.dataset.id), accion: b.dataset.accion, nombre }) })).json();
+                if (r && r.success === false && r.message) alert(r.message);
                 rlCargarAccesos();
             }));
         }

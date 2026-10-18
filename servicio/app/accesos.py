@@ -63,7 +63,7 @@ def solicitar(token: str, nombre: str, consola: str, ip: str) -> dict:
     token = str(token or "")
     if not 32 <= len(token) <= 128:
         raise Error("Solicitud inválida.")
-    nombre = " ".join(str(nombre or "").split())[:40] or "Consola sin nombre"
+    nombre = limpiar_nombre(nombre) or "Consola sin nombre"
     consola = str(consola or "")[:11] if len(str(consola or "")) == 11 else ""
     ahora = time.time()
     with _cerrojo:
@@ -108,10 +108,21 @@ def listar() -> list[dict]:
     return [dict(f) for f in filas]
 
 
-def decidir(id_: int, accion: str) -> None:
-    """aceptar | rechazar (pendientes) · revocar (aceptadas: se borra)."""
+def limpiar_nombre(nombre) -> str:
+    return " ".join(str(nombre or "").split())[:40]
+
+
+def decidir(id_: int, accion: str, nombre: str | None = None) -> None:
+    """aceptar | rechazar (pendientes) · revocar (aceptadas: se borra) ·
+    renombrar (el nombre que ve el administrador; la consola no se entera)."""
     with _conectar() as con:
-        if accion == "revocar":
+        if accion == "renombrar":
+            nombre = limpiar_nombre(nombre)
+            if not nombre:
+                raise Error("El nombre no puede quedar vacío.")
+            con.execute("UPDATE accesos SET nombre = ? WHERE id = ? AND estado IN ('pendiente', 'aceptada')",
+                        (nombre, id_))
+        elif accion == "revocar":
             con.execute("DELETE FROM accesos WHERE id = ? AND estado = 'aceptada'", (id_,))
         elif accion in ("aceptar", "rechazar"):
             con.execute("UPDATE accesos SET estado = ?, decidida = ? WHERE id = ? AND estado = 'pendiente'",
