@@ -761,7 +761,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
 
                 <div class="rl-idiomas" style="margin-top:6px;">
                     <label><input type="radio" name="rl-origen" value="fichero" checked> Subir el fichero</label>
-                    <label><input type="radio" name="rl-origen" value="enlace"> Solo un enlace de descarga (fangames, traducciones...)</label>
+                    <label><input type="radio" name="rl-origen" value="enlace"> Solo un enlace de descarga (juegos fanmade publicados por su autor)</label>
                 </div>
 
                 <label style="display:block;margin-top:6px;" id="rl-label-modo-grupo">
@@ -812,8 +812,10 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 </div>
 
                 <div id="rl-enlace-campos" style="display:none;">
-                    <p class="rl-ayuda">No se sube nada: el servidor descarga el juego del enlace (guarda una copia solo
-                        como respaldo) y la app lo instalará desde ese enlace, así cuenta para las estadísticas del autor.
+                    <p class="rl-ayuda">No se sube nada: la app instalará el juego desde ese enlace, así las descargas y las
+                        métricas se quedan en la web del autor. <strong>El servidor guarda una copia de seguridad</strong> del
+                        juego, que se sirve si el enlace deja de funcionar; publicarlo, y esa copia, son responsabilidad tuya.
+                        Solo juegos fanmade de su propio autor: nada con copyright, personajes o marcas de terceros.
                         Tiene que ser el enlace de descarga directa del fichero, no la página. En RPG Maker, un .zip con el juego.</p>
                     <label for="rl-enl-nombre">Nombre del juego</label>
                     <input type="text" id="rl-enl-nombre" placeholder="ej. Mi fangame (la extensión se toma del enlace si no la pones)">
@@ -860,16 +862,20 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                             <option value="homebrew">Homebrew o juego propio</option>
                             <option value="libre">Licencia libre</option>
                             <option value="permiso">Permiso del titular de los derechos</option>
-                            <option value="fangame">Fan game original (sin código de juegos comerciales)</option>
-                            <option value="autor">Enlace a la web de su autor</option>
+                            <option value="fangame">Fan game 100 % original (sin código, personajes, música ni marcas de terceros)</option>
+                            <option value="autor">Enlace a la web de su autor (publicado por su propio autor)</option>
                         </select>
                         <input type="text" class="rl-vis-detalle" placeholder="Detalle" style="margin-top:4px; display:none;">
                         <div class="rl-vis-aviso" style="display:none;">⚠ Esta librería es <strong>pública</strong>: este juego
                             lo podrá ver y descargar <strong>cualquiera</strong>, y se compartirá con las otras librerías
                             públicas. Hazlo solo si tienes derecho a distribuirlo.</div>
-                        <p class="rl-ayuda">Comparte solo lo que tengas derecho a distribuir. Una copia de seguridad de tu
-                            original es solo para ti; un ROM hack ya parcheado contiene el juego original (comparte el
-                            parche o el enlace de su autor). Lo que declares aquí queda registrado.</p>
+                        <p class="rl-ayuda">Comparte solo lo que tengas derecho a distribuir: no está permitido con juegos con
+                            copyright de terceros, ni con fan games que usen personajes, música o marcas ajenas. Una copia de
+                            seguridad de tu original es solo para ti; un ROM hack o una traducción ya aplicados contienen el
+                            juego original y no se pueden compartir. <strong>De todo juego que compartas se guarda una copia
+                            de seguridad en esta librería</strong> (también de los que se descargan de la web de su autor:
+                            se sirve si su enlace deja de funcionar); compartirlo, y esa copia, son responsabilidad tuya.
+                            Lo que declares aquí queda registrado.</p>
                     </div>
                 </div>
                 <label for="rl-titulo">Es otro idioma de... (opcional)</label>
@@ -1006,16 +1012,20 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                             <option value="homebrew">Homebrew o juego propio</option>
                             <option value="libre">Licencia libre</option>
                             <option value="permiso">Permiso del titular de los derechos</option>
-                            <option value="fangame">Fan game original (sin código de juegos comerciales)</option>
-                            <option value="autor">Enlace a la web de su autor</option>
+                            <option value="fangame">Fan game 100 % original (sin código, personajes, música ni marcas de terceros)</option>
+                            <option value="autor">Enlace a la web de su autor (publicado por su propio autor)</option>
                         </select>
                         <input type="text" class="rl-vis-detalle" placeholder="Detalle" style="margin-top:4px; display:none;">
                         <div class="rl-vis-aviso" style="display:none;">⚠ Esta librería es <strong>pública</strong>: este juego
                             lo podrá ver y descargar <strong>cualquiera</strong>, y se compartirá con las otras librerías
                             públicas. Hazlo solo si tienes derecho a distribuirlo.</div>
-                        <p class="rl-ayuda">Comparte solo lo que tengas derecho a distribuir. Una copia de seguridad de tu
-                            original es solo para ti; un ROM hack ya parcheado contiene el juego original (comparte el
-                            parche o el enlace de su autor). Lo que declares aquí queda registrado.</p>
+                        <p class="rl-ayuda">Comparte solo lo que tengas derecho a distribuir: no está permitido con juegos con
+                            copyright de terceros, ni con fan games que usen personajes, música o marcas ajenas. Una copia de
+                            seguridad de tu original es solo para ti; un ROM hack o una traducción ya aplicados contienen el
+                            juego original y no se pueden compartir. <strong>De todo juego que compartas se guarda una copia
+                            de seguridad en esta librería</strong> (también de los que se descargan de la web de su autor:
+                            se sirve si su enlace deja de funcionar); compartirlo, y esa copia, son responsabilidad tuya.
+                            Lo que declares aquí queda registrado.</p>
                     </div>
                 </div>
 
@@ -1792,7 +1802,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             return '<span class="rl-card-lib rl-card-privado" title="Solo lo ven las consolas con acceso a esta librería">solo para mí</span>';
         }
         const RL_BASES = { homebrew: 'Homebrew o juego propio', libre: 'Licencia libre', permiso: 'Permiso del titular',
-                           fangame: 'Fan game original', autor: 'Enlace a la web de su autor' };
+                           fangame: 'Fan game 100 % original', autor: 'Enlace a la web de su autor' };
         const RL_DETALLE = { libre: 'Qué licencia (p. ej. GPL-3.0, CC BY 4.0)', permiso: 'Quién dio el permiso y cómo (p. ej. correo del autor, 2026-10)' };
         function rlPrepararVisibilidad(id) {
             const caja = document.getElementById(id);
@@ -2248,9 +2258,12 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             '· Su catálogo y sus juegos podrá verlos y descargarlos, sin clave, cualquiera que use la app ' +
             'y todas las demás librerías públicas del índice.\n' +
             '· Solo se publica lo que marques como «Compartido». NO está permitido publicar como públicos juegos ' +
-            'con copyright: solo juegos propios (p. ej., tus fan games), con licencia libre o con permiso del ' +
+            'con copyright: solo juegos propios (p. ej., tus fan games, sin personajes ni marcas de terceros), con ' +
+            'licencia libre o con permiso del ' +
             'titular. Distribuir copias de juegos comerciales sin permiso es ilegal en España y en muchos otros ' +
             'países, aunque sea gratis.\n' +
+            '· De todo juego que compartas se guarda una copia de seguridad en esta librería (también de los que ' +
+            'se descargan de la web de su autor); compartirlo, y esa copia, son responsabilidad tuya.\n' +
             '· Los juegos «Solo para mí» deben haberse obtenido de manera legítima.\n' +
             '· Tú eres el responsable de lo que publicas y compartes; RomsLibrary no se responsabiliza de los usos ' +
             'contrarios a estas normas.\n' +

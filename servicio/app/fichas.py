@@ -40,8 +40,8 @@ BASES = {
     "homebrew": "Homebrew o juego propio",
     "libre": "Licencia libre",
     "permiso": "Permiso del titular de los derechos",
-    "fangame": "Fan game original (sin código de juegos comerciales)",
-    "autor": "Enlace a la web de su autor",
+    "fangame": "Fan game 100 % original (sin código, personajes, música ni marcas de terceros)",
+    "autor": "Enlace a la web de su autor (publicado por su propio autor)",
 }
 # Las que necesitan detalle: qué licencia, o quién dio el permiso y cómo.
 BASES_CON_DETALLE = {"libre", "permiso"}

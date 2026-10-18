@@ -1,15 +1,16 @@
 """
 Fuentes externas: juegos cuya descarga oficial está en la web de su autor
-(p. ej. traducciones de fans). La app los descarga DE ESE ENLACE, así cuentan
-para las estadísticas del autor; la copia de esta librería solo se usa si el
-enlace no responde o no coincide.
+(juegos fanmade publicados por su autor). La app los descarga DE ESE ENLACE,
+así cuentan para las estadísticas del autor; la copia de seguridad de esta
+librería (el gestor avisa de que se guarda) solo se usa si el enlace no
+responde o no coincide.
 
 - Al guardar un enlace, el servidor descarga el fichero UNA vez y lo compara
   con el juego: si es la versión actual, se guarda el enlace; si es una
   versión nueva del mismo juego (cabecera), entra como update (versiones.py);
   si no, se rechaza.
 - También se puede crear un juego nuevo directamente desde un enlace (con su
-  nombre, carátula e idiomas), sin subir nada: p. ej. un fangame. Si el
+  nombre, carátula e idiomas), sin subir nada: p. ej. un fan game. Si el
   nombre no lleva extensión se toma la del fichero que da el enlace. Los
   .zip de RPG Maker (y de PS1 con cue+bin) se descomprimen aquí como al
   subirlos; la app comprueba lo que baja del enlace con su SHA (sha_enlace).
