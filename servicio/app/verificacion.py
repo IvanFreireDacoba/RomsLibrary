@@ -43,11 +43,13 @@ DATS = {
     "gba": ("No-Intro", "no-intro/Nintendo - Game Boy Advance.dat"),
     "n64": ("No-Intro", "no-intro/Nintendo - Nintendo 64.dat"),
     "gc": ("Redump", "redump/Nintendo - GameCube.dat"),
+    "wii": ("Redump", "redump/Nintendo - Wii.dat"),
     "psx": ("Redump", "redump/Sony - PlayStation.dat"),
     "ps2": ("Redump", "redump/Sony - PlayStation 2.dat"),
     "psp": ("Redump", "redump/Sony - PlayStation Portable.dat"),
 }
-DISCOS = {"gc", "psx", "ps2", "psp"}
+DISCOS = {"gc", "wii", "psx", "ps2", "psp"}
+NINTENDO_DISCO = {"gc", "wii"}
 # Extensiones cuyo contenido es el que listan las bases (no comprimidos ni índices).
 VERIFICABLES = {".gb", ".gbc", ".gba", ".n64", ".z64", ".v64", ".iso", ".gcm", ".bin", ".zip"}
 DIAS_DATS = 14
@@ -95,7 +97,12 @@ def _descargar_dat(sistema: str) -> None:
 
 
 def _serie_base(serie: str) -> str:
-    """"SCES-52456-ANZ/P" -> "SCES-52456" (el de la cabecera no lleva sufijos)."""
+    """"SCES-52456-ANZ/P" -> "SCES-52456" (el de la cabecera no lleva sufijos).
+    GameCube/Wii: "DL-DOL-GALE-USA" / "RVL-RMGE-USA-B0" -> "GALE" / "RMGE", los
+    4 primeros caracteres del ID de la cabecera (los 2 últimos son la editora)."""
+    m = re.match(r"(?:DL-DOL|RVL)-([A-Z0-9]{4})(?:-|$)", serie.upper())
+    if m:
+        return m.group(1)
     m = re.match(r"([A-Z]{4})[-_]?(\d{3})\.?(\d{2})", serie.upper())
     return f"{m.group(1)}-{m.group(2)}{m.group(3)}" if m else serie.upper()
 
@@ -198,10 +205,19 @@ def verificar(sistema: str, nombre: str) -> dict:
     return _sin_coincidencia(b, fuente, sistema, ruta, sha1, "este fichero", ruta.stat().st_size)
 
 
+def serie_de(cod, sistema: str) -> str | None:
+    """La serie con la que la base de volcados indexa el juego (ver _serie_base)."""
+    if not cod:
+        return None
+    if sistema in NINTENDO_DISCO:
+        return cod[0].split(":", 1)[1][:4]
+    return cod[1]
+
+
 def _sin_coincidencia(b: dict, fuente: str, sistema: str, ruta: Path, sha1: str, que: str, tamano: int) -> dict:
     if sistema in DISCOS:
         cod = cabeceras.codigo(ruta, sistema)
-        serie = cod[1] if cod else None
+        serie = serie_de(cod, sistema)
         oficiales = b["serie"].get(serie) if serie else None
         if oficiales:
             iguales = sorted(n for n, t in oficiales.items() if t == tamano)
@@ -245,7 +261,7 @@ def identificar_publicado(sistema: str, nombre: str, sha: str | None) -> str | N
         ruta = pistas[0] if pistas else None
     cod = cabeceras.codigo(ruta, sistema) if ruta else None
     if cod and b:
-        serie = cod[0].split(":", 1)[1]
+        serie = serie_de(cod, sistema)
         oficiales = sorted(n for n in b["serie"].get(serie, {}) if n and not _HOMEBREW.search(n))
         if oficiales:
             return (f"Su cabecera lleva el código «{serie}» de «{oficiales[0]}», un juego publicado: es ese juego o una "

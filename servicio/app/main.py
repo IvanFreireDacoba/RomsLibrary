@@ -88,6 +88,9 @@ EXTENSIONES_POR_SISTEMA = {
     "gba": {".gba", ".zip"},
     "n64": {".n64", ".z64", ".v64", ".zip"},
     "gc": {".iso", ".gcm", ".rvz", ".zip"},
+    # Wii (USB Loader GX): .wbfs o .iso. Un .wbfs de más de 4 GB va partido
+    # (.wbfs + .wbf1, .wbf2...) como juego de varios ficheros.
+    "wii": {".wbfs", ".wbf1", ".wbf2", ".wbf3", ".iso"},
     "switch": {".nsp", ".xci"},
     "psx": {".bin", ".cue", ".chd", ".zip"},
     "ps2": {".iso", ".chd", ".zip"},
@@ -109,6 +112,9 @@ EXTENSIONES_DISCO = {".cue", ".iso", ".chd"}
 # falta saber explícitamente qué es cada fichero -- un update y un DLC
 # pueden ser el mismo .nsp sin forma de distinguirlos por nombre/extensión.
 ROLES_SWITCH_VALIDOS = {"base", "update", "dlc"}
+
+# Partes de un .wbfs partido (FAT32 no admite ficheros de 4 GB o más).
+PARTES_WBFS = {".wbf1", ".wbf2", ".wbf3"}
 
 
 @asynccontextmanager
@@ -441,7 +447,7 @@ def servir_caratula(sistema: str, fichero: str, request: Request, token: str | N
 
 
 # Extensiones del fichero que lanza ES-DE dentro de un grupo de disco.
-EXTENSIONES_LANZABLES = {".m3u", ".cue", ".iso", ".chd", ".nsp", ".xci"}
+EXTENSIONES_LANZABLES = {".m3u", ".cue", ".iso", ".chd", ".nsp", ".xci", ".wbfs"}
 SISTEMAS_DISCO = {"psx", "ps2"}
 
 
@@ -458,7 +464,7 @@ def carpeta_como_fichero(carpeta: Path) -> Path:
         return carpeta
     nombre = carpeta.name
     lanzable = None
-    for ext in (".m3u", ".cue", ".iso", ".chd", ".nsp", ".xci"):
+    for ext in (".m3u", ".cue", ".iso", ".chd", ".nsp", ".xci", ".wbfs"):
         if (carpeta / f"{nombre}{ext}").is_file():
             lanzable = nombre + ext
             break
@@ -594,6 +600,10 @@ async def subir_juego(
             detail=f"Extensión inválida para el sistema '{system}': se acepta {sorted(extensiones_validas)}.",
         )
 
+    if system == "wii" and Path(filename).suffix.lower() in PARTES_WBFS:
+        raise HTTPException(status_code=400, detail="Un .wbf1/.wbf2... es una parte de un .wbfs: súbelo como juego "
+                                                    "de varios ficheros junto con su .wbfs.")
+
     es_rpgmaker = system == "rpgmaker"
 
     if es_rpgmaker:
@@ -726,6 +736,30 @@ async def anadir_fichero_grupo(
     return {"ok": True}
 
 
+def _ordenar_wbfs_partido(carpeta_juego: Path, nombre_juego: str) -> None:
+    """Un juego de Wii de varios ficheros solo puede ser un .wbfs partido: un
+    .wbfs y sus partes .wbf1, .wbf2... seguidas. Se renombran a
+    «<juego>.wbfs», «<juego>.wbf1»... (los cargadores buscan las partes con el
+    mismo nombre que el .wbfs)."""
+    ficheros = [p for p in carpeta_juego.iterdir() if p.is_file()]
+    wbfs = [p for p in ficheros if p.suffix.lower() == ".wbfs"]
+    partes = sorted((p for p in ficheros if p.suffix.lower() in PARTES_WBFS), key=lambda p: p.suffix.lower())
+    error = None
+    if len(wbfs) != 1 or len(wbfs) + len(partes) != len(ficheros):
+        error = "Un juego de Wii de varios ficheros tiene que ser un .wbfs y sus partes (.wbf1, .wbf2...)."
+    elif [p.suffix.lower() for p in partes] != [f".wbf{i}" for i in range(1, len(partes) + 1)]:
+        error = "Faltan partes del .wbfs: tienen que ir seguidas (.wbf1, .wbf2...)."
+    elif not partes:
+        error = "Un solo .wbfs no es un juego de varios ficheros: súbelo como fichero suelto."
+    if error:
+        shutil.rmtree(carpeta_juego, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=error)
+    for p in [*wbfs, *partes]:
+        p.rename(carpeta_juego / f"{nombre_juego}{p.suffix.lower()}.renombrando")
+    for p in carpeta_juego.iterdir():
+        p.rename(carpeta_juego / p.name.removesuffix(".renombrando"))
+
+
 def _registrar_rol_grupo(carpeta_juego: Path, filename: str, rol: str) -> None:
     """Va guardando el rol (base/update/dlc) de cada fichero de un grupo de
     Switch segun se sube, en grupo.json dentro de la propia carpeta -- se
@@ -809,7 +843,9 @@ async def finalizar_grupo(
             raise HTTPException(status_code=400, detail="Multidisco necesita al menos 2 ficheros de disco (.cue/.iso/.chd).")
         (carpeta_juego / f"{nombre_juego}.m3u").write_text("\n".join(discos) + "\n", encoding="utf-8")
 
-    if system == "switch":
+    if system == "wii":
+        _ordenar_wbfs_partido(carpeta_juego, nombre_juego)
+    if system in ("switch", "wii"):
         carpeta_juego = carpeta_como_fichero(carpeta_juego)
     if system in ("psx", "ps2"):
         problemas = reparar_cues(carpeta_juego)
@@ -951,6 +987,10 @@ def renombrar_juego(
                 if f.get("nombre") == lanzable.name:
                     f["nombre"] = nombre_lanzable
             ruta_json.write_text(json.dumps(datos_grupo, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Las partes de un .wbfs partido se llaman como él.
+        for p in destino.iterdir():
+            if p.suffix.lower() in PARTES_WBFS and p.stem == lanzable.stem:
+                p.rename(destino / (Path(nombre_lanzable).stem + p.suffix.lower()))
     for c in caratulas:
         c.rename(c.parent / (clave_nueva + c.suffix))
     # El juego conserva su historial de versiones y, si es un solo fichero,

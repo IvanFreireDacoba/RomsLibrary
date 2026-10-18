@@ -38,6 +38,8 @@ APK_VERSION = APK_DIR / "version.json"
 # paquete por plataforma y version.json con su versión y SHA-256 (lo escribe
 # cliente/empaquetado/publicar.sh). Solo lo publica el servicio de origen.
 CLIENTE_DIR = DATOS / "cliente"
+# App para Wii (Homebrew Channel): boot.dol, meta.xml, icon.png y el zip de instalación.
+WII_DIR = DATOS / "wii"
 APK_ORIGEN = os.environ.get("ROMSLIBRARY_APK_ORIGEN", "https://sund.es").rstrip("/")
 
 # Gestor web: lo protege Authentik delante (proxy inverso con forward-auth).

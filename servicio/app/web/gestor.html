@@ -751,6 +751,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     <option value="gba">GameBoy Advance</option>
                     <option value="n64">N64</option>
                     <option value="gc">GameCube</option>
+                    <option value="wii">Wii</option>
                     <option value="switch">Switch</option>
                     <option value="psx">PlayStation</option>
                     <option value="ps2">PlayStation 2</option>
@@ -764,7 +765,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 </div>
 
                 <label style="display:block;margin-top:6px;" id="rl-label-modo-grupo">
-                    <input type="checkbox" id="rl-modo-grupo"> Juego de varios ficheros (PS1 cue+bin, multidisco)
+                    <input type="checkbox" id="rl-modo-grupo"> Juego de varios ficheros (PS1 cue+bin, multidisco, .wbfs partido de Wii)
                 </label>
 
                 <!-- Switch: siempre como grupo (carpeta "<juego>.nsp/" que ES-DE
@@ -897,6 +898,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                         <option value="gba">GameBoy Advance</option>
                         <option value="n64">N64</option>
                         <option value="gc">GameCube</option>
+                        <option value="wii">Wii</option>
                         <option value="switch">Switch</option>
                         <option value="psx">PlayStation</option>
                         <option value="ps2">PlayStation 2</option>
@@ -1073,7 +1075,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         function rlEtiquetaIdiomas(juego) {
             return (juego.idiomas || []).map((i) => i.toUpperCase()).join(' ');
         }
-        const rlNombresConsola = { gb: 'GameBoy', gbc: 'GameBoy Color', gba: 'GameBoy Advance', n64: 'N64', gc: 'GameCube', switch: 'Switch', psx: 'PlayStation', ps2: 'PlayStation 2', psp: 'PSP', rpgmaker: 'RPG Maker' };
+        const rlNombresConsola = { gb: 'GameBoy', gbc: 'GameBoy Color', gba: 'GameBoy Advance', n64: 'N64', gc: 'GameCube', wii: 'Wii', switch: 'Switch', psx: 'PlayStation', ps2: 'PlayStation 2', psp: 'PSP', rpgmaker: 'RPG Maker' };
 
         function rlSetupDrop(dropId, inputId, textoVacio, onFile) {
             const drop = document.getElementById(dropId);
@@ -1195,6 +1197,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             gba: ['.gba', '.zip'],
             n64: ['.n64', '.z64', '.v64', '.zip'],
             gc: ['.iso', '.gcm', '.rvz', '.zip'],
+            wii: ['.wbfs', '.iso', '.wbf1', '.wbf2', '.wbf3'],
             switch: ['.nsp', '.xci'],
             psx: ['.bin', '.cue', '.chd', '.zip'],
             ps2: ['.iso', '.chd', '.zip'],

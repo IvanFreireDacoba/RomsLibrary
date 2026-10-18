@@ -13,6 +13,8 @@ Lo que se lee, por sistema:
 - GB/GBC: título interno (0x134).           - GBA: código de juego (0xAC).
 - N64: código de juego (0x3B), con cualquier orden de bytes (z64/v64/n64).
 - GameCube (.iso/.gcm): ID de disco (0x00).
+- Wii (.iso/.wbfs): ID de disco (0x00; en .wbfs, en la copia de la cabecera
+  del disco que va en el sector 1, 0x200).
 - PS1/PS2: número de serie del arranque (SYSTEM.CNF dentro del disco).
 - PSP: número de serie (UMD_DATA.BIN dentro del disco).
 - .zip: la cabecera del ROM que va dentro.
@@ -70,6 +72,15 @@ def _gc(cab: bytes):
         return None
     codigo, titulo = _txt(cab[0:6]), _txt(cab[0x20:0x60])
     return ("gc:" + codigo, titulo) if _imprimible(codigo) else None
+
+
+def _wii(cab: bytes):
+    if cab[:4] == b"WBFS":                                               # .wbfs: la cabecera del disco va en 0x200
+        cab = cab[0x200:]
+    if len(cab) < 0x60 or cab[0x18:0x1C] != b"\x5d\x1c\x9e\xa3":         # marca mágica de Wii
+        return None
+    codigo, titulo = _txt(cab[0:6]), _txt(cab[0x20:0x60])
+    return ("wii:" + codigo, titulo) if _imprimible(codigo) else None
 
 
 # ---------------- discos (ISO 9660) ----------------
@@ -149,6 +160,8 @@ def _de_flujo(f, extension: str, sistema: str):
         return _CARTUCHOS[extension](f.read(0x200))
     if sistema == "gc" and extension in (".iso", ".gcm"):
         return _gc(f.read(0x60))
+    if sistema == "wii" and extension in (".iso", ".wbfs"):
+        return _wii(f.read(0x260))
     if sistema in ("psx", "ps2") and extension in (".iso", ".bin"):
         return _psx_ps2(f, sistema)
     if sistema == "psp" and extension == ".iso":

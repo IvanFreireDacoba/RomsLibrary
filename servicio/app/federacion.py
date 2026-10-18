@@ -764,7 +764,7 @@ def _instalar_copia(sistema: str, resultado: Path, juego_remoto: dict, nuevo_nom
         stem_viejo = viejo.stem if viejo.suffix.lower() in nucleo.EXTENSIONES_LANZABLES else viejo.name
         for f in list(resultado.iterdir()):
             # El lanzable y su .sbi (los cores buscan el .sbi con el mismo nombre que el .cue).
-            if f.stem == stem_viejo and f.suffix.lower() in nucleo.EXTENSIONES_LANZABLES | {".sbi"}:
+            if f.stem == stem_viejo and f.suffix.lower() in nucleo.EXTENSIONES_LANZABLES | nucleo.PARTES_WBFS | {".sbi"}:
                 f.rename(resultado / (stem + f.suffix))
         ruta_json = resultado / "grupo.json"
         if ruta_json.is_file():

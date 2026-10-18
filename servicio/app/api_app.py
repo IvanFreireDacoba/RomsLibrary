@@ -36,7 +36,8 @@ import main as nucleo
 router = APIRouter()
 
 RUTA = "/APIs/RomLibraryApp"
-ACCIONES_PUBLICAS = {"version", "apk", "cliente_version", "cliente", "solicitar_acceso", "acceso_estado"}
+ACCIONES_PUBLICAS = {"version", "apk", "cliente_version", "cliente", "wii_version", "wii", "solicitar_acceso",
+                     "acceso_estado"}
 
 
 def _clave_valida(request: Request) -> bool:
@@ -140,6 +141,10 @@ async def api_app(request: Request):
         return _cliente_version()
     if accion == "cliente":
         return _cliente(_param(q, "paquete"))
+    if accion == "wii_version":
+        return _wii_info()
+    if accion == "wii":
+        return _wii_fichero(_param(q, "fichero"))
     raise HTTPException(status_code=404, detail="Acción desconocida.")
 
 
@@ -213,6 +218,29 @@ def _cliente(paquete: str):
     if not ruta.is_file() or "/" in datos["fichero"]:
         raise HTTPException(status_code=404, detail="Paquete no disponible.")
     return FileResponse(ruta, media_type="application/octet-stream", filename=datos["fichero"])
+
+
+# ---------- App para Wii (Homebrew Channel) ----------
+
+def _wii_info() -> dict:
+    """{"version", "ficheros": {nombre: {sha256, tamano}}, "instalar": {...}}: la app
+    se actualiza fichero a fichero (boot.dol, meta.xml, icon.png); el zip de
+    «instalar» es para la primera vez (se descomprime en la raíz de la SD)."""
+    try:
+        return json.loads((config.WII_DIR / "version.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise HTTPException(status_code=404, detail="App de Wii no publicada en este servicio.") from None
+
+
+def _wii_fichero(nombre: str):
+    info = _wii_info()
+    publicados = {**info.get("ficheros", {}), info.get("instalar", {}).get("fichero", ""): {}}
+    if nombre not in publicados or not nombre or "/" in nombre:
+        raise HTTPException(status_code=404, detail="Fichero desconocido.")
+    ruta = config.WII_DIR / nombre
+    if not ruta.is_file():
+        raise HTTPException(status_code=404, detail="Fichero no disponible.")
+    return FileResponse(ruta, media_type="application/octet-stream", filename=nombre)
 
 
 def _origen_apk_util() -> bool:
