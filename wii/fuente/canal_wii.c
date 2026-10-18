@@ -70,7 +70,6 @@ int canal_instalar(const unsigned char *wad, size_t tam, int ios, char *error, s
         fatUnmount("sd:");
         fatUnmount("usb:");
         if (IOS_ReloadIOS(ios) < 0) {
-            WPAD_Init();
             snprintf(error, n, "No se pudo cargar el IOS %d.", ios);
             free(cert); free(tik); free(tmdb); free(trozo);
             return -1;
@@ -112,10 +111,6 @@ int canal_instalar(const unsigned char *wad, size_t tam, int ios, char *error, s
         ES_AddTitleCancel();
     }
     free(cert); free(tik); free(tmdb); free(trozo);
-    if (ios > 0) {
-        WPAD_Init();
-        PAD_Init();
-    }
     if (r < 0) {
         snprintf(error, n, "La Wii rechazó %s (error %d). Si es -1017 o -2011, el IOS %d no acepta canales homebrew.",
                  paso, (int)r, ios);
@@ -123,3 +118,5 @@ int canal_instalar(const unsigned char *wad, size_t tam, int ios, char *error, s
     }
     return 0;
 }
+
+void canal_volver_al_menu(void) { SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0); }

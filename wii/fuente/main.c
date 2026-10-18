@@ -262,11 +262,23 @@ static void confirmar_si(void) {
         con = NULL;
         int r = canal_instalar(wad, tam, ios, e, sizeof e);
         free(wad);
-        if (r) dialogo("No se pudo instalar el canal", e);
-        else dialogo("Canal instalado",
-                     "RomsLibrary ya está en el menú de Wii. El canal abre apps/romslibrary de la SD (o del USB): no la "
-                     "borres. Pulsa A para cerrar la app.");
-        confirmar = C_SALIR;
+        /* Ya no hay mandos, red ni discos (ver canal.h): el resultado se
+         * queda en pantalla un rato y se vuelve al menú de Wii. */
+        char t[700];
+        if (r) snprintf(t, sizeof t, "No se pudo instalar el canal. %s Haz una foto de este mensaje.", e);
+        else snprintf(t, sizeof t, "Canal instalado: RomsLibrary ya está en el menú de Wii. El canal abre "
+                      "apps/romslibrary de la SD (o del USB): no la borres.");
+        for (int seg = r ? 30 : 10; seg > 0; seg--) {
+            limpiar(C_FONDO);
+            texto(40, 40, LETRA_TITULO, r ? C_ROJO : C_ACENTO, 0, r ? "Error" : "Canal instalado");
+            texto(40, 140, LETRA_GRANDE, C_TEXTO, 560, t);
+            char cuenta[80];
+            snprintf(cuenta, sizeof cuenta, "Volviendo al menú de Wii en %d s…", seg);
+            texto(40, 400, LETRA_GRANDE, C_TENUE, 0, cuenta);
+            presentar();
+            plat_dormir_ms(1000);
+        }
+        canal_volver_al_menu();
         break;
     }
     case C_BORRAR_RESTOS:
@@ -691,7 +703,7 @@ static void dibujar_confirmar(void) {
     case C_CANAL:
         titulo = "Instalar como canal";
         snprintf(t, sizeof t, "Se instala el canal RomsLibrary en el menú de Wii (con el cIOS de d2x). Abre la app de "
-                 "apps/romslibrary, así que no hay que reinstalarlo cuando se actualice. Al terminar, la app se cierra. "
+                 "apps/romslibrary, así que no hay que reinstalarlo cuando se actualice. Al terminar, la Wii vuelve a su menú. "
                  "Recomendado: copia de la NAND con BootMii y Priiloader. ¿Seguir?");
         break;
     case C_BORRAR_RESTOS:
