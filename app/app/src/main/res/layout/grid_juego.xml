@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#10151a"
+    android:padding="6dp">
+
+    <es.jarjar.romlibrary.CaratulaCuadrada
+        android:id="@+id/imagenCaratula"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#3a4a3a"
+        android:scaleType="fitCenter" />
+
+    <TextView
+        android:id="@+id/textoNombreJuego"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:fontFamily="monospace"
+        android:textColor="#d7e4d7"
+        android:textSize="12sp"
+        android:maxLines="2"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/textoDetalleJuego"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:textColor="#7bffb0"
+        android:textSize="10sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:layout_marginTop="6dp">
+
+        <Button
+            android:id="@+id/botonInstalar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:focusable="false"
+            android:focusableInTouchMode="false"
+            android:background="@drawable/boton_instalar_fondo"
+            android:textColor="@drawable/boton_instalar_texto"
+            android:fontFamily="monospace"
+            android:textAllCaps="false"
+            android:textSize="11sp" />
+
+        <ProgressBar
+            android:id="@+id/barraProgreso"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center_vertical"
+            android:max="1000"
+            android:visibility="gone"
+            android:progressTint="#7bffb0"
+            android:progressBackgroundTint="#3a4a3a" />
+
+    </FrameLayout>
+
+</LinearLayout>

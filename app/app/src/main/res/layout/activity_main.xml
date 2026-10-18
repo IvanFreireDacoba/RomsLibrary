@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#10151a">
+
+    <!-- Estado 1: sin carpeta ROMs elegida todavia: SOLO esto se ve. -->
+    <LinearLayout
+        android:id="@+id/grupoElegirCarpeta"
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:padding="32dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textColor="#7bffb0"
+            android:textStyle="bold"
+            android:textSize="20sp"
+            android:gravity="center"
+            android:text="&gt; RomsLibrary_" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="24dp"
+            android:fontFamily="monospace"
+            android:textColor="#6f8f6f"
+            android:gravity="center"
+            android:text="Elige la carpeta donde ES-DE guarda tus ROMs para empezar." />
+
+        <Button
+            android:id="@+id/botonElegirCarpetaInicial"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Elegir carpeta ROMs" />
+
+    </LinearLayout>
+
+    <!-- Estado 2: carpeta valida: vista unica de biblioteca. -->
+    <LinearLayout
+        android:id="@+id/grupoBiblioteca"
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="16dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textColor="#7bffb0"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:text="&gt; Biblioteca_" />
+
+        <LinearLayout
+            android:orientation="horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp">
+
+            <Spinner
+                android:id="@+id/spinnerFiltroSistema"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1" />
+
+            <EditText
+                android:id="@+id/campoFiltroNombre"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:background="#05070a"
+                android:fontFamily="monospace"
+                android:textColor="#d7e4d7"
+                android:textColorHint="#3a4a3a"
+                android:hint="Buscar por nombre..."
+                android:inputType="text"
+                android:imeOptions="actionSearch"
+                android:singleLine="true" />
+
+            <Button
+                android:id="@+id/botonAlternarVista"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:minWidth="0dp"
+                android:fontFamily="monospace"
+                android:textAllCaps="false"
+                android:textSize="12sp"
+                android:text="Cuadrícula" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:orientation="horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:textColor="#6f8f6f"
+                android:textSize="12sp"
+                android:text="Estado:" />
+
+            <Spinner
+                android:id="@+id/spinnerFiltroInstalado"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:fontFamily="monospace"
+                android:textColor="#6f8f6f"
+                android:textSize="12sp"
+                android:text="Librería:" />
+
+            <Spinner
+                android:id="@+id/spinnerFiltroLibreria"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/textoEstado"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:fontFamily="monospace"
+            android:textColor="#6f8f6f" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <ListView
+                android:id="@+id/listaJuegos"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:divider="#3a4a3a"
+                android:dividerHeight="1dp"
+                android:listSelector="@android:color/transparent" />
+
+            <GridView
+                android:id="@+id/cuadriculaJuegos"
+                android:listSelector="@android:color/transparent"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone"
+                android:numColumns="auto_fit"
+                android:columnWidth="140dp"
+                android:horizontalSpacing="8dp"
+                android:verticalSpacing="8dp"
+                android:stretchMode="columnWidth" />
+
+        </FrameLayout>
+
+    </LinearLayout>
+
+</FrameLayout>

@@ -1,0 +1,51 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'es.jarjar.romlibrary'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'es.jarjar.romlibrary'
+        minSdk 24
+        targetSdk 34
+        versionCode 60
+        versionName '2.28.0'
+    }
+
+    // Keystore de debug FIJO, propio del proyecto -- mismo motivo aplicado ya
+    // en otro proyecto de este usuario: Android solo trata una instalación
+    // como "actualización" compatible si la firma coincide exacta con la ya
+    // instalada. Con un keystore commiteado y fijo, cualquier máquina que
+    // compile este proyecto firma exactamente igual. El keystore NO está en
+    // el repositorio (quien lo tenga puede firmar «actualizaciones» de la
+    // app): se copia a app/app/debug.keystore desde la copia de seguridad.
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'romlibrary-debug'
+            keyAlias 'romlibrary-debug'
+            keyPassword 'romlibrary-debug'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.documentfile:documentfile:1.0.1'
+    implementation 'androidx.core:core:1.13.1'
+
+    // Refresco de ES-DE tras una descarga (force-stop + relanzar) sin root
+    // y sin AccessibilityService -- ver EsDeRefresher.
+
+    testImplementation 'junit:junit:4.13.2'
+}

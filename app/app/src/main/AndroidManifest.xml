@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- Para poder pedirle a Tasker (net.dinglisch.android.tasker.ACTION_TASK)
+         que ejecute la Task de refresco de ES-DE, ver TaskerBridge. -->
+    <uses-permission android:name="net.dinglisch.android.tasker.PERMISSION_RUN_TASKS" />
+
+    <!-- Acceso a todo el almacenamiento (autorizado explícitamente por el
+         usuario): hace falta para poder copiar la carátula dentro de
+         ES-DE/downloaded_media/<sistema>/covers/, que es una carpeta hermana
+         de ROMs/ y NUNCA queda cubierta por el permiso SAF de "Elegir carpeta
+         ROMs" (ese solo da acceso al árbol de ROMs elegido, no a cualquier
+         otro sitio del almacenamiento). MANAGE_EXTERNAL_STORAGE no es un
+         permiso runtime normal: se concede desde Ajustes del sistema. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
+    <!-- Necesario en Android 11+ para poder comprobar/lanzar ES-DE (visibilidad
+         de paquetes de terceros restringida por defecto). Se declaran dos
+         candidatos porque la build de Galaxy Store y la build directa/Patreon
+         (habitual en Retroid) pueden diferir. -->
+    <queries>
+        <package android:name="org.es_de.frontend" />
+        <package android:name="org.es_de.frontend.galaxy" />
+        <package android:name="net.dinglisch.android.taskerm" />
+        <!-- Las apps con icono en el lanzador: son las que ES-DE lista en
+             androidapps/androidgames/emulators, y EsDeIconos usa su icono. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@android:style/Theme.Material">
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="es.jarjar.romlibrary.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+
+        <activity
+            android:name="es.jarjar.romlibrary.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name="es.jarjar.romlibrary.ConsolasActivity"
+            android:exported="false" />
+
+        <!-- Mantiene vivo el proceso mientras hay una descarga (ver DescargaService). -->
+        <service
+            android:name="es.jarjar.romlibrary.DescargaService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+
+</manifest>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Texto oscuro cuando la fila esta seleccionada (fondo verde brillante),
+     texto verde fosforo en el resto de estados (fondo oscuro). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:state_selected="true" android:color="#10151a" />
+    <item android:state_enabled="false" android:color="#8a9098" />
+    <item android:state_selected="true" android:color="#10151a" />
+    <item android:color="#7bffb0" />
+</selector>
