@@ -5,10 +5,13 @@ App para consolas Android (Retroid, móviles…) que se conecta a una librería
 instala los juegos en la consola (lista para ES-DE), y sincroniza las partidas
 entre tus consolas.
 
-> **Legal:** software de gestión y sincronización; no incluye ROMs ni concede
-> derechos sobre juegos u otros contenidos de terceros. Usa solo ficheros que
-> tengas derecho a obtener, guardar y compartir. Ver [LEGAL.md](LEGAL.md).
-> La licencia MIT cubre solo el código.
+> **Legal:** RomsLibrary sirve para ordenar y mantener una librería de juegos
+> propia, sincronizar partidas entre consolas y que los creadores de juegos
+> fanmade publiquen los suyos. No incluye ROMs ni concede derechos sobre juegos
+> u otros contenidos de terceros. **No está permitido publicar como públicos
+> juegos con copyright**; **los juegos privados deben obtenerse de manera
+> legítima**. No nos responsabilizamos de los usos contrarios a estas normas.
+> Ver [LEGAL.md](LEGAL.md). La licencia MIT cubre solo el código.
 
 ## Descargar
 
@@ -77,15 +80,18 @@ Las APK firmadas con otra clave no se instalan encima de la oficial.
 
 ## Aviso legal
 
-- RomsLibrary es software para gestionar **tu propia colección**. No incluye
-  juegos, BIOS ni firmwares, no enlaza a ellos y no dice dónde conseguirlos.
-- Cada persona es responsable de lo que guarda y comparte con él. Usa solo
-  juegos que tengas derecho a usar. Comparte («Compartido», o dando acceso a
-  tu librería) solo lo que tengas derecho a distribuir: homebrew, juegos de
-  licencia libre o con permiso del titular. Una copia de seguridad de tu
-  original es solo para ti y no se puede compartir. En muchos países,
-  incluida España, distribuir copias de juegos comerciales sin permiso es
-  ilegal aunque sea gratis. Ver [LEGAL.md](LEGAL.md).
+- RomsLibrary es un sistema para ordenar y mantener **tu propia librería de
+  juegos**, sincronizar las partidas entre tus consolas y guardar sus datos de
+  guardado, con un sistema de publicación para que los creadores de juegos
+  fanmade publiquen gratis los suyos (enlazando a su web, donde se quedan las
+  descargas). No incluye juegos, BIOS ni firmwares, ni dice dónde conseguirlos.
+- **No está permitido publicar como públicos («Compartido») juegos con
+  copyright** de terceros: solo los de su propio autor o titular, o con
+  licencia libre o permiso. Dar acceso a tu librería también es compartir.
+- **Todos los juegos privados deben obtenerse de manera legítima** (p. ej., la
+  copia de seguridad de un original tuyo, que es solo para ti).
+- **No nos responsabilizamos de cualquier uso contrario a estas normas**: cada
+  persona responde de lo que guarda, publica y comparte. Ver [LEGAL.md](LEGAL.md).
 - La app solo descarga lo que ofrece la librería a la que la conectes, o las
   otras librerías públicas que esta te enseñe (en ese caso, directamente de
   ellas). Quien gestiona cada librería es responsable de su contenido.
