@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .env
 datos/
+app/app/debug.keystore
+cliente/dist/
+cliente/build/

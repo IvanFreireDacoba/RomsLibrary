@@ -1,9 +1,9 @@
 # RomsLibrary — App para consolas Linux, Steam Deck y Windows
 
-La misma app que [RomsLibrary-App](https://github.com/IvanFreireDacoba/RomsLibrary-App)
+La misma app que la [app Android](../app)
 (Android), para el resto de sistemas: consolas Linux con PortMaster (muOS,
 Knulli, ROCKNIX…), Steam Deck, PC Linux y Windows (también la ROG Xbox Ally).
-Se conecta a una librería [RomsLibrary](https://github.com/IvanFreireDacoba/RomsLibrary-Servicio),
+Se conecta a una librería [RomsLibrary](../README.md),
 instala los juegos en tu carpeta de ROMs y sincroniza las partidas de
 RetroArch entre tus consolas, también con las Android. Se maneja con el mando.
 
@@ -13,11 +13,11 @@ RetroArch entre tus consolas, también con las Android. Se maneja con el mando.
 > u otros contenidos de terceros. **No está permitido publicar como públicos
 > juegos con copyright**; **los juegos privados deben obtenerse de manera
 > legítima**. No nos responsabilizamos de los usos contrarios a estas normas.
-> Ver [LEGAL.md](LEGAL.md). La licencia MIT cubre solo el código.
+> Ver [LEGAL.md](../LEGAL.md). La licencia MIT cubre solo el código.
 
 ## Descargar
 
-Los paquetes están en **[Releases](https://github.com/IvanFreireDacoba/RomsLibrary-Cliente/releases/latest)**.
+Los paquetes están en **[Releases](https://github.com/IvanFreireDacoba/RomsLibrary/releases)** (las `aplicativo-v…`).
 Una vez instalada se actualiza sola.
 
 | Dónde | Paquete | Cómo se instala |
@@ -119,7 +119,7 @@ Python + pygame-ce, empaquetado con PyInstaller.
 - **Todos los juegos privados deben obtenerse de manera legítima** (p. ej., la
   copia de seguridad de un original tuyo, que es solo para ti).
 - **No nos responsabilizamos de cualquier uso contrario a estas normas**: cada
-  persona responde de lo que guarda, publica y comparte. Ver [LEGAL.md](LEGAL.md).
+  persona responde de lo que guarda, publica y comparte. Ver [LEGAL.md](../LEGAL.md).
 - La app solo descarga lo que ofrece la librería a la que la conectes, o las
   otras librerías públicas que esta te enseñe (en ese caso, directamente de
   ellas). Quien gestiona cada librería es responsable de su contenido.
@@ -134,10 +134,10 @@ Python + pygame-ce, empaquetado con PyInstaller.
 
 ## Licencia
 
-[MIT](LICENSE): puedes usar, copiar, modificar y redistribuir el código como
+[MIT](../LICENSE): puedes usar, copiar, modificar y redistribuir el código como
 quieras, también en proyectos comerciales; solo hay que conservar el aviso de
 copyright y la licencia.
 
 No es obligatorio, pero si lo usas o lo modificas se agradece un enlace a este
-repositorio (https://github.com/IvanFreireDacoba/RomsLibrary-Cliente) para que otros puedan
+repositorio (https://github.com/IvanFreireDacoba/RomsLibrary) para que otros puedan
 encontrar el original.

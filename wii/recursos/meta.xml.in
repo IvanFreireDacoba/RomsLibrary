@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1">
+  <name>RomsLibrary</name>
+  <coder>Iván Freire</coder>
+  <version>@VERSION@</version>
+  <release_date>@FECHA@</release_date>
+  <short_description>Tu librería de juegos por la red</short_description>
+  <long_description>Instala en el disco USB los juegos de Wii y GameCube de tu librería RomsLibrary (USB Loader GX y Nintendont), y los de Game Boy, N64 y PlayStation en las carpetas de sus emuladores. También los borra para dejar sitio. Se actualiza sola.
+
+Software libre (MIT). Usa solo juegos que tengas derecho a usar.</long_description>
+  <ahb_access/>
+</app>

@@ -1,0 +1,7 @@
+# Herramientas del Homebrew Channel para montar el canal (Python 2, como ellas).
+FROM python:2.7.18-buster
+RUN printf 'deb http://archive.debian.org/debian buster main\n' > /etc/apt/sources.list \
+    && apt-get -o Acquire::Check-Valid-Until=false update \
+    && apt-get install -y --no-install-recommends libpng-dev xvfb libgl1-mesa-dri libglu1-mesa x11-apps imagemagick \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir "pycryptodome<3.21" "pyglet<1.4"

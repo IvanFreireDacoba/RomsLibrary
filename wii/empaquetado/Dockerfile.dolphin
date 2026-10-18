@@ -1,0 +1,3 @@
+# Dolphin para probar boot.dol sin una Wii (ver README: --shm-size=2g, SD por carpeta sincronizada).
+FROM debian:trixie-slim
+RUN apt-get update && apt-get install -y --no-install-recommends dolphin-emu xvfb xauth x11-apps imagemagick mesa-utils libgl1-mesa-dri ca-certificates && rm -rf /var/lib/apt/lists/*

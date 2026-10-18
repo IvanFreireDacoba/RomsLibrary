@@ -1,7 +1,7 @@
 # RomsLibrary — App Android
 
 App para consolas Android (Retroid, móviles…) que se conecta a una librería
-[RomsLibrary](https://github.com/IvanFreireDacoba/RomsLibrary-Servicio) e
+[RomsLibrary](../README.md) e
 instala los juegos en la consola (lista para ES-DE), y sincroniza las partidas
 entre tus consolas.
 
@@ -11,11 +11,11 @@ entre tus consolas.
 > u otros contenidos de terceros. **No está permitido publicar como públicos
 > juegos con copyright**; **los juegos privados deben obtenerse de manera
 > legítima**. No nos responsabilizamos de los usos contrarios a estas normas.
-> Ver [LEGAL.md](LEGAL.md). La licencia MIT cubre solo el código.
+> Ver [LEGAL.md](../LEGAL.md). La licencia MIT cubre solo el código.
 
 ## Descargar
 
-La APK está en **[Releases](https://github.com/IvanFreireDacoba/RomsLibrary-App/releases/latest)**.
+La APK está en **[Releases](https://github.com/IvanFreireDacoba/RomsLibrary/releases)** (las `apk-v…`).
 Una vez instalada se actualiza sola.
 
 ## Uso
@@ -60,7 +60,7 @@ ANDROID_ID es la contraseña de la consola: solo viaja ahí (por HTTPS) y se
 guarda como HMAC; las librerías nunca lo ven.
 
 Desde *Sincronizar consolas* puedes vincular otra consola tuya (Android, o
-Linux/Steam Deck/Windows con [RomsLibrary-Cliente](https://github.com/IvanFreireDacoba/RomsLibrary-Cliente))
+Linux/Steam Deck/Windows con el [aplicativo](../cliente))
 para compartir partidas: la otra tiene que aceptarlo, y puedes desvincular o
 bloquear cuando quieras.
 
@@ -98,7 +98,7 @@ Las APK firmadas con otra clave no se instalan encima de la oficial.
 - **Todos los juegos privados deben obtenerse de manera legítima** (p. ej., la
   copia de seguridad de un original tuyo, que es solo para ti).
 - **No nos responsabilizamos de cualquier uso contrario a estas normas**: cada
-  persona responde de lo que guarda, publica y comparte. Ver [LEGAL.md](LEGAL.md).
+  persona responde de lo que guarda, publica y comparte. Ver [LEGAL.md](../LEGAL.md).
 - La app solo descarga lo que ofrece la librería a la que la conectes, o las
   otras librerías públicas que esta te enseñe (en ese caso, directamente de
   ellas). Quien gestiona cada librería es responsable de su contenido.
@@ -112,10 +112,10 @@ Las APK firmadas con otra clave no se instalan encima de la oficial.
 
 ## Licencia
 
-[MIT](LICENSE): puedes usar, copiar, modificar y redistribuir el código como
+[MIT](../LICENSE): puedes usar, copiar, modificar y redistribuir el código como
 quieras, también en proyectos comerciales; solo hay que conservar el aviso de
 copyright y la licencia.
 
 No es obligatorio, pero si lo usas o lo modificas se agradece un enlace a este
-repositorio (https://github.com/IvanFreireDacoba/RomsLibrary-App) para que otros puedan
+repositorio (https://github.com/IvanFreireDacoba/RomsLibrary) para que otros puedan
 encontrar el original.

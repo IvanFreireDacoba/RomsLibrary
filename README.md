@@ -1,8 +1,11 @@
 # RomsLibrary
 
-Tu propia librería de juegos retro en tu servidor, con una app Android para
-instalarlos en la consola (Retroid, móviles...) y sincronizar las partidas
-entre consolas.
+Un sistema para **ordenar y mantener tu propia librería de juegos** en tu
+servidor, con apps para llevarlos a tus consolas (Android; Linux, Steam Deck y
+Windows; Wii), **sincronizar las partidas** entre consolas y guardar sus datos
+de guardado. Incluye un **sistema de publicación de juegos fanmade**: sus
+creadores pueden publicar gratis y para cualquier consola sus juegos, con un
+enlace a su web para que las descargas y las métricas se queden allí.
 
 > **Legal:** RomsLibrary sirve para ordenar y mantener una librería de juegos
 > propia, sincronizar partidas entre consolas y que los creadores de juegos
@@ -12,9 +15,19 @@ entre consolas.
 > legítima**. No nos responsabilizamos de los usos contrarios a estas normas.
 > Ver [LEGAL.md](LEGAL.md). La licencia MIT cubre solo el código.
 
-Este repositorio es el **servicio** (y su despliegue). La app Android está en
-[RomsLibrary-App](https://github.com/IvanFreireDacoba/RomsLibrary-App); su
-APK se descarga de la sección *Releases* de ese repositorio.
+## Partes y descargas
+
+Todo está en este repositorio. Cada parte se publica en
+[Releases](https://github.com/IvanFreireDacoba/RomsLibrary/releases) con su propio prefijo de versión:
+
+| Parte | Carpeta | Release | Qué se descarga |
+|---|---|---|---|
+| **Servicio** (librería, índice, partidas y gestor web) | [`servicio/`](servicio), [`despliegue/`](despliegue) | `servicio-v…` | `RomsLibrary-Servicio-….zip` (código y despliegue con Docker) |
+| **APK** (Android: Retroid, móviles…) | [`app/`](app) | `apk-v…` | `RomsLibrary-….apk` |
+| **Aplicativo** (Linux con PortMaster, Steam Deck, Windows) | [`cliente/`](cliente) | `aplicativo-v…` | `RomsLibrary-PortMaster.zip`, `-linux-x86_64.tar.gz`, `-windows-x86_64.zip` |
+| **Wii** (Homebrew Channel y canal del menú de Wii) | [`wii/`](wii) | `wii-v…` | `RomsLibrary-Wii.zip`, `RomsLibrary-canal.wad` |
+
+Las apps se actualizan solas una vez instaladas. Cada carpeta tiene su README.
 
 - **Servicio** (`servicio/`): guarda los juegos, sirve la app y se federa
   con otras librerías públicas.
@@ -26,8 +39,8 @@ APK se descarga de la sección *Releases* de ese repositorio.
   librería de la que venga el juego. No guarda juegos.
 - **Gestor web** (`https://tu-dominio/gestor/`): subir, editar, borrar y
   descargar juegos; ajustes del servicio. Protegido con Authentik.
-- **App Android** ([RomsLibrary-App](https://github.com/IvanFreireDacoba/RomsLibrary-App)):
-  una sola APK para todo el mundo; cada uno la conecta a la librería que
+- **Apps** ([`app/`](app), [`cliente/`](cliente), [`wii/`](wii)):
+  las mismas para todo el mundo; cada uno las conecta a la librería que
   quiera (por defecto `https://sund.es`).
 
 ## Cómo encaja todo
@@ -245,7 +258,7 @@ datos y aplica la configuración de RomsLibrary). Después:
 
 ### Conectar la app
 
-1. Instala la APK oficial: está en las *Releases* de RomsLibrary-App y en
+1. Instala la APK oficial: está en las *Releases* (`apk-v…`) y en
    cualquier servicio RomsLibrary (`https://<servicio>/APIs/RomLibraryApp?accion=apk`).
 2. Al abrirla por primera vez, en *Configura RomsLibrary* pon la URL de tu
    servicio (por defecto viene `https://sund.es`), el nombre de la consola y,
@@ -348,5 +361,5 @@ quieras, también en proyectos comerciales; solo hay que conservar el aviso de
 copyright y la licencia.
 
 No es obligatorio, pero si lo usas o lo modificas se agradece un enlace a este
-repositorio (https://github.com/IvanFreireDacoba/RomsLibrary-Servicio) para que otros puedan
+repositorio (https://github.com/IvanFreireDacoba/RomsLibrary) para que otros puedan
 encontrar el original.

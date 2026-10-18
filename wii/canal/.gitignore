@@ -1,0 +1,5 @@
+build/
+cache/
+cargador/*.o
+cargador/*.elf
+cargador/*.dol
