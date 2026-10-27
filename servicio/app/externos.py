@@ -16,13 +16,23 @@ responde o no coincide.
   subirlos; la app comprueba lo que baja del enlace con su SHA (sha_enlace).
 - Cada 12 h se mira (sin descargar) si el fichero del enlace ha cambiado
   (ETag, Last-Modified, tamaño): el gestor avisa y el administrador decide
-  si lo importa. Nunca se importa solo.
+  si lo importa a mano (comprobar_todos / bucle).
+- Una vez por semana (los VIERNES, actualizar_cambiados / bucle_semanal) sí
+  se importa solo: por cada juego con fuente externa se mira (HEAD) si el
+  enlace ha cambiado y, solo si ha cambiado, se baja, se comprueba su SHA y,
+  si el CONTENIDO es distinto al actual, entra como versión nueva
+  (versiones.aplicar). Así la cadena de versiones avanza y las apps lo
+  detectan y se actualizan solas (accion=versiones). Nunca se baja un
+  fichero cuyos metadatos no han cambiado (no se malgasta ancho de banda con
+  ficheros de varios GB).
 - Solo enlaces https a direcciones públicas (redsegura.py), y tienen que ser
   el fichero, no una página web.
 """
 
 import asyncio
+import datetime
 import hashlib
+import os
 import re
 import sqlite3
 import time
@@ -37,6 +47,10 @@ import versiones
 
 MAX_BYTES = 8 * 1024 ** 3
 CADA_COMPROBACION = 12 * 3600
+# Actualización automática semanal de las fuentes externas: por defecto los
+# viernes (lunes=0 ... viernes=4) a las 04:00 de la hora del servidor.
+DIA_SEMANAL = int(os.environ.get("ROMSLIBRARY_EXTERNOS_DIA", "4"))
+HORA_SEMANAL = int(os.environ.get("ROMSLIBRARY_EXTERNOS_HORA", "4"))
 
 
 def _conectar() -> sqlite3.Connection:
@@ -118,7 +132,9 @@ async def guardar_enlace(sistema: str, nombre: str, url: str, pagina: str, usuar
     _, _, ruta, juego = versiones._juego_actualizable(sistema, nombre, Path(nombre).suffix)
     temporal = versiones.temporal_junto_a(ruta)
     try:
-        sha, tamano, cab = await _descargar(url, temporal)
+        sha, tam_enlace, cab = await _descargar(url, temporal)
+        temporal = versiones._normalizar_contenedor(temporal, ruta, ruta.parent.name)
+        sha, tamano = versiones._sha_fichero(temporal), temporal.stat().st_size
         actual = versiones.historial(ruta.parent.name, ruta.name)["versiones"][0]
         if sha == actual["sha"]:
             resultado = {"ok": True, "version": actual["n"], "nueva": False}
@@ -126,7 +142,7 @@ async def guardar_enlace(sistema: str, nombre: str, url: str, pagina: str, usuar
             r = await versiones.aplicar(ruta.parent.name, ruta.name, temporal, sha, tamano,
                                         f"{usuario} (enlace externo)", sin_cabecera_ok)
             resultado = {"ok": True, "version": r["version"], "nueva": True}
-        _guardar(juego["id"], url, pagina, tamano, cab)
+        _guardar(juego["id"], url, pagina, tam_enlace, cab)   # tamaño del ENLACE (lo que sirve la web), para detectar cambios
         return resultado
     finally:
         temporal.unlink(missing_ok=True)
@@ -249,3 +265,102 @@ async def bucle() -> None:
         except Exception as e:  # noqa: BLE001 -- el bucle no puede morir
             print(f"[externos] {e}", flush=True)
         await asyncio.sleep(CADA_COMPROBACION)
+
+
+# ---------- actualización automática semanal (viernes): sí importa sola ----------
+
+def _marcar(juego_id: str, estado: str, detalle: str) -> None:
+    with _conectar() as con:
+        con.execute("UPDATE externos SET estado = ?, detalle = ?, comprobado = ? WHERE juego_id = ?",
+                    (estado, detalle[:200], time.time(), juego_id))
+
+
+async def _metadato_cambiado(fila) -> bool:
+    """HEAD al enlace: True si ETag/Last-Modified/tamaño han cambiado respecto a
+    lo guardado. Si el servidor no da ningún metadato comparable, True (se baja
+    para comparar por contenido). HTTPException si el enlace no responde 200."""
+    async with redsegura.cliente(timeout=20) as cliente:
+        r = await cliente.head(fila["url"])
+    if r.status_code != 200:
+        raise HTTPException(502, f"El enlace responde HTTP {r.status_code}.")
+    pares = [(fila["etag"], r.headers.get("etag")),
+             (fila["modificado"], r.headers.get("last-modified")),
+             (str(fila["tamano"]) if fila["tamano"] else None, r.headers.get("content-length"))]
+    comparables = [(viejo, nuevo) for viejo, nuevo in pares if viejo and nuevo]
+    if not comparables:
+        return True                                    # sin metadatos fiables: comprobar por contenido
+    return any(viejo != nuevo for viejo, nuevo in comparables)
+
+
+async def _reimportar(sistema: str, nombre: str, url: str, pagina: str, juego_id: str) -> bool:
+    """Baja el enlace y, si su CONTENIDO es distinto al de la versión actual,
+    lo aplica como versión nueva. Devuelve True si ha entrado una versión nueva.
+    Siempre refresca los metadatos guardados (para no volver a bajarlo en balde)."""
+    _, _, ruta, _ = versiones._juego_actualizable(sistema, nombre, Path(nombre).suffix)
+    temporal = versiones.temporal_junto_a(ruta)
+    try:
+        sha_enlace, tam_enlace, cab = await _descargar(url, temporal)
+        temporal = versiones._normalizar_contenedor(temporal, ruta, ruta.parent.name)
+        sha, tamano = versiones._sha_fichero(temporal), temporal.stat().st_size
+        actual = versiones.historial(ruta.parent.name, ruta.name)["versiones"][0]
+        nueva = sha != actual["sha"]
+        if nueva:
+            # sin_cabecera_ok=True: el administrador eligió esta fuente a mano y
+            # confía en el autor; la comprobación de cabecera (si el formato la
+            # tiene) sigue protegiendo de que el enlace pase a ser otro juego.
+            await versiones.aplicar(ruta.parent.name, ruta.name, temporal, sha, tamano,
+                                    "actualización automática (viernes)", sin_cabecera_ok=True)
+        _guardar(juego_id, url, pagina, tam_enlace, cab, sha_enlace if sha_enlace != sha else None)
+        return nueva
+    finally:
+        temporal.unlink(missing_ok=True)
+
+
+async def actualizar_cambiados() -> dict:
+    """Viernes: por cada juego con fuente externa, mira si el enlace ha cambiado
+    y, si ha cambiado, lo importa como versión nueva (las apps lo detectan por
+    accion=versiones). Un fallo en un juego no detiene a los demás."""
+    with _conectar() as con:
+        filas = con.execute("SELECT e.*, j.ruta FROM externos e JOIN juegos j ON j.id = e.juego_id "
+                            "WHERE j.ruta IS NOT NULL").fetchall()
+    resumen = {"revisados": 0, "actualizados": 0, "sin_cambios": 0, "errores": 0}
+    for f in filas:
+        resumen["revisados"] += 1
+        sistema, nombre = f["ruta"].split("/", 1)
+        try:
+            if not await _metadato_cambiado(f):
+                _marcar(f["juego_id"], "ok", "")
+                resumen["sin_cambios"] += 1
+                continue
+            if await _reimportar(sistema, nombre, f["url"], f["pagina"], f["juego_id"]):
+                resumen["actualizados"] += 1
+            else:
+                resumen["sin_cambios"] += 1           # metadatos cambiaron, contenido no
+        except HTTPException as e:
+            resumen["errores"] += 1
+            _marcar(f["juego_id"], "caido", str(e.detail))
+        except Exception as e:  # noqa: BLE001 -- un juego no puede tumbar la tanda
+            resumen["errores"] += 1
+            _marcar(f["juego_id"], "caido", str(e))
+    return resumen
+
+
+def _segundos_hasta(dia_semana: int, hora: int) -> float:
+    """Segundos hasta el próximo `dia_semana` (lunes=0) a las `hora`:00 locales."""
+    ahora = datetime.datetime.now()
+    dias = (dia_semana - ahora.weekday()) % 7
+    objetivo = (ahora + datetime.timedelta(days=dias)).replace(hour=hora % 24, minute=0, second=0, microsecond=0)
+    if objetivo <= ahora:
+        objetivo += datetime.timedelta(days=7)
+    return (objetivo - ahora).total_seconds()
+
+
+async def bucle_semanal() -> None:
+    while True:
+        await asyncio.sleep(_segundos_hasta(DIA_SEMANAL, HORA_SEMANAL))
+        try:
+            resumen = await actualizar_cambiados()
+            print(f"[externos] actualización semanal: {resumen}", flush=True)
+        except Exception as e:  # noqa: BLE001 -- el bucle no puede morir
+            print(f"[externos] actualización semanal: {e}", flush=True)
+        await asyncio.sleep(60)   # pasar de la hora en punto para no re-disparar

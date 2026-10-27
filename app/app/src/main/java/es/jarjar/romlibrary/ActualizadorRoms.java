@@ -91,6 +91,32 @@ final class ActualizadorRoms {
         }
     }
 
+    /**
+     * Hiper-ligero: cuántos ROMs INSTALADOS tienen una versión más nueva en la
+     * librería, SIN descargar nada (solo la lista de versiones y el SHA de los
+     * ficheros candidatos por tamaño, con la caché de hashes de comprobar()).
+     * Lo usa el worker de fondo para decidir si avisar (ver ComprobadorActualizaciones).
+     */
+    static int pendientes(Context ctx, String baseUrl, String token, Uri arbolUri) {
+        if (arbolUri == null) {
+            return 0;
+        }
+        try {
+            List<Obsoleta> obsoletas = leerObsoletas(baseUrl, token);
+            if (obsoletas.isEmpty()) {
+                return 0;
+            }
+            DocumentFile raiz = DocumentFile.fromTreeUri(ctx, arbolUri);
+            if (raiz == null) {
+                return 0;
+            }
+            return buscar(ctx, raiz, obsoletas).size();
+        } catch (Exception e) {
+            GuardadosSync.log("comprobador de actualizaciones (fondo): " + e);
+            return 0;
+        }
+    }
+
     private static List<Obsoleta> leerObsoletas(String baseUrl, String token) throws Exception {
         JSONArray arr = new JSONObject(ApiClient.getTexto(baseUrl, token, Cuenta.RUTA_API + "?accion=versiones", 15000))
                 .getJSONArray("obsoletas");

@@ -317,6 +317,8 @@ public class MainActivity extends BaseActivity {
 
 
         AppUpdater.comprobar(this, baseUrl, token);
+        // Aviso diario en segundo plano si hay juegos descargados con versión nueva.
+        ComprobadorActualizaciones.programar(getApplicationContext());
         comprobarConectividadYAvisarSiHaceFalta();
         cargarSistemasDisponibles();
         actualizarEstadoInicial();

@@ -129,6 +129,8 @@ async def _ciclo_vida(_app):
     federacion.arrancar_hilo_hashes()
     verificacion.arrancar_hilo()
     tarea_externos = asyncio.create_task(externos.bucle())
+    # Actualización automática semanal de las fuentes externas (los viernes).
+    tarea_externos_semanal = asyncio.create_task(externos.bucle_semanal())
 
     async def alta_periodica():
         await asyncio.sleep(15)
@@ -145,6 +147,7 @@ async def _ciclo_vida(_app):
     yield
     tarea.cancel()
     tarea_externos.cancel()
+    tarea_externos_semanal.cancel()
 
 
 # Sin /docs ni /openapi.json: el servicio está expuesto a internet y no
