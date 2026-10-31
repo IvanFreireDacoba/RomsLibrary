@@ -41,6 +41,7 @@ DATS = {
     "gb": ("No-Intro", "no-intro/Nintendo - Game Boy.dat"),
     "gbc": ("No-Intro", "no-intro/Nintendo - Game Boy Color.dat"),
     "gba": ("No-Intro", "no-intro/Nintendo - Game Boy Advance.dat"),
+    "nds": ("No-Intro", "no-intro/Nintendo - Nintendo DS.dat"),
     "n64": ("No-Intro", "no-intro/Nintendo - Nintendo 64.dat"),
     "gc": ("Redump", "redump/Nintendo - GameCube.dat"),
     "wii": ("Redump", "redump/Nintendo - Wii.dat"),
@@ -51,7 +52,7 @@ DATS = {
 DISCOS = {"gc", "wii", "psx", "ps2", "psp"}
 NINTENDO_DISCO = {"gc", "wii"}
 # Extensiones cuyo contenido es el que listan las bases (no comprimidos ni índices).
-VERIFICABLES = {".gb", ".gbc", ".gba", ".n64", ".z64", ".v64", ".iso", ".gcm", ".bin", ".zip"}
+VERIFICABLES = {".gb", ".gbc", ".gba", ".nds", ".n64", ".z64", ".v64", ".iso", ".gcm", ".bin", ".zip"}
 DIAS_DATS = 14
 CARPETA = config.DATOS / "dats"
 

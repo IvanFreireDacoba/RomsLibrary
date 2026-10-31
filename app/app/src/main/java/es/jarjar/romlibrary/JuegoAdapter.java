@@ -40,13 +40,15 @@ final class JuegoAdapter extends ArrayAdapter<Juego> {
         TextView detalle = fila.findViewById(R.id.textoDetalleJuego);
         Button botonInstalar = fila.findViewById(R.id.botonInstalar);
 
-        nombre.setText(juego.nombreFichero);
+        nombre.setText(juego.nombreMostrado());
         String tamano = (juego.tamanoBytes / 1024 / 1024 >= 1)
                 ? (juego.tamanoBytes / 1024 / 1024) + " MB"
                 : (juego.tamanoBytes / 1024) + " KB";
         String etiquetaRoles = juego.etiquetaRolesSwitch();
+        String etiquetaVersion = juego.etiquetaVersion();
         detalle.setText(android.text.TextUtils.concat((juego.instaladoLocal ? "✓ EN EL DISPOSITIVO · " : "") + tamano
                 + (etiquetaRoles.isEmpty() ? "" : " · " + etiquetaRoles)
+                + (etiquetaVersion.isEmpty() ? "" : " · " + etiquetaVersion)
                 + (juego.origen != null ? " · de " + juego.libreria + (juego.confianza >= 70 ? " ✔" : "") : "")
                 + (juego.fuenteExterna != null ? " · enlace del autor" : ""),
                 juego.etiquetaIdiomaYEstado()));

@@ -15,8 +15,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-SISTEMAS = ["gb", "gbc", "gba", "n64", "gc", "switch", "psx", "ps2", "psp", "rpgmaker"]
-NOMBRES = {"gb": "Game Boy", "gbc": "Game Boy Color", "gba": "Game Boy Advance", "n64": "Nintendo 64",
+SISTEMAS = ["gb", "gbc", "gba", "nds", "n64", "gc", "switch", "psx", "ps2", "psp", "rpgmaker"]
+NOMBRES = {"gb": "Game Boy", "gbc": "Game Boy Color", "gba": "Game Boy Advance", "nds": "Nintendo DS",
+           "n64": "Nintendo 64",
            "gc": "GameCube", "switch": "Switch", "psx": "PlayStation", "ps2": "PlayStation 2", "psp": "PSP",
            "rpgmaker": "RPG Maker"}
 
@@ -40,8 +41,8 @@ _ALIAS_MUOS = {
 # Núcleo de RetroArch con el que se nombran en el servidor las partidas de
 # frontends que NO separan por núcleo (Knulli: /userdata/saves/<consola>/).
 # Son los mismos que usan las Retroid, así las partidas pasan de una a otra.
-NUCLEO_POR_DEFECTO = {"gb": "Gambatte", "gbc": "Gambatte", "gba": "mGBA", "n64": "Mupen64Plus-Next",
-                      "psx": "PCSX-ReARMed", "psp": "PPSSPP"}
+NUCLEO_POR_DEFECTO = {"gb": "Gambatte", "gbc": "Gambatte", "gba": "mGBA", "nds": "melonDS DS",
+                      "n64": "Mupen64Plus-Next", "psx": "PCSX-ReARMed", "psp": "PPSSPP"}
 
 
 @dataclass

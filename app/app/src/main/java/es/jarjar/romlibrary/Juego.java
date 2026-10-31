@@ -34,6 +34,10 @@ final class Juego {
     // librería las manda por separado (cada una con sus propias versiones).
     // En la lista se ve una sola entrada (ver MainActivity.agruparIdiomas).
     String titulo;
+    // Número de versión de la cadena (n) y su etiqueta vX.Y.Z editable en el
+    // gestor (cosmética: la detección de updates es por SHA, no por esto).
+    int version;
+    String etiqueta;
     List<String> idiomas = new ArrayList<>();
     List<Juego> variantes = new ArrayList<>(); // todas las del mismo título, esta incluida
     // Marcado como archivo corrupto en la librería (a mano o por la verificación): se avisa antes de instalar.
@@ -71,6 +75,27 @@ final class Juego {
     /** Nuestra clave de acceso solo viaja a nuestro servidor, nunca a otras librerías. */
     String clave(String nuestra) {
         return origenUrl != null ? null : nuestra;
+    }
+
+    /** Nombre que se ENSEÑA al usuario, sin la extensión: el título que da la
+     *  librería, o el nombre de fichero sin su extensión. Los juegos de varios
+     *  ficheros (disco) conservan su nombre. {@link #nombreFichero} sigue siendo
+     *  el identificador para descargar, instalar y guardar. */
+    String nombreMostrado() {
+        if (titulo != null && !titulo.isEmpty()) {
+            return titulo;
+        }
+        if (esGrupo) {
+            return nombreFichero;
+        }
+        int punto = nombreFichero.lastIndexOf('.');
+        return punto > 0 ? nombreFichero.substring(0, punto) : nombreFichero;
+    }
+
+    /** Etiqueta de versión para las tarjetas (vX.Y.Z), solo si el juego tiene
+     *  más de una versión; "" si no aplica. */
+    String etiquetaVersion() {
+        return (version > 1 && etiqueta != null && !etiqueta.isEmpty()) ? etiqueta : "";
     }
 
     /** "ES", "EN FR"... ("" si la librería no lo sabe). */

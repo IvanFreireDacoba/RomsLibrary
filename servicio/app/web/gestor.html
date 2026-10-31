@@ -749,6 +749,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     <option value="gb">GameBoy</option>
                     <option value="gbc">GameBoy Color</option>
                     <option value="gba">GameBoy Advance</option>
+                    <option value="nds">Nintendo DS</option>
                     <option value="n64">N64</option>
                     <option value="gc">GameCube</option>
                     <option value="wii">Wii</option>
@@ -1488,7 +1489,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             aviso.innerHTML = corruptos.length === 0 ? '' : '<strong>✖ ' + corruptos.length + (corruptos.length === 1
                 ? ' juego marcado como archivo corrupto' : ' juegos marcados como archivo corrupto')
                 + '</strong> (sube la versión buena con Editar → Añadir update):<br>'
-                + corruptos.map((j) => rlEscapar((rlNombresConsola[j.system] || j.system) + ' · ' + j.filename)
+                + corruptos.map((j) => rlEscapar((rlNombresConsola[j.system] || j.system) + ' · ' + (j.titulo || j.filename))
                     + ' <span class="rl-ayuda">— ' + rlEscapar(j.motivoCorrupto) + ' · ' + rlEstadoServicio(j) + '</span>').join('<br>');
         }
 
@@ -1602,7 +1603,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                         (juego.titulo && rlTitulosRepetidos[juego.system + '/' + juego.titulo] > 1 ? '<span class="rl-card-lib" title="Hay versiones en otros idiomas con el título «' + rlEscapar(juego.titulo) + '»">otros idiomas</span>' : '') +
                         (juego.hayVersionNueva ? '<span class="rl-card-lib" title="Una librería de confianza tiene una versión más nueva">hay versión nueva</span>' : '') +
                         (ajeno && juego.confianza >= 70 ? '<span class="rl-card-lib" title="Librería de confianza (índice)">✔ confianza ' + (+juego.confianza) + '</span>' : '') +
-                        '<div class="rl-card-nombre">' + rlEscapar(juego.filename) + '</div>';
+                        '<div class="rl-card-nombre">' + rlEscapar(juego.titulo || juego.filename) + '</div>';
 
                     const acciones = document.createElement('div');
                     acciones.className = 'rl-card-acciones';
@@ -1934,9 +1935,22 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 caja.appendChild(ver);
                 for (const v of h.versiones) {
                     const fila = document.createElement('div');
-                    fila.textContent = 'v' + v.n + (v === h.versiones[0] ? ' (actual)' : '') + ' · '
+                    const etiq = document.createElement('input');
+                    etiq.type = 'text';
+                    etiq.value = v.etiqueta || ('v' + v.n);
+                    etiq.title = 'Etiqueta editable (vX.Y.Z, opcional «-texto»)';
+                    etiq.style.cssText = 'width:12em;margin-right:.4em';
+                    const guardar = document.createElement('button');
+                    guardar.textContent = 'Guardar';
+                    guardar.style.marginRight = '.6em';
+                    guardar.addEventListener('click', () => rlGuardarEtiqueta(juego, v.n, etiq.value, guardar));
+                    fila.appendChild(etiq);
+                    fila.appendChild(guardar);
+                    const resto = document.createElement('span');
+                    resto.textContent = '#' + v.n + (v === h.versiones[0] ? ' (actual)' : '') + ' · '
                         + new Date(v.fecha * 1000).toLocaleDateString('es-ES') + ' · ' + rlFormatoGB(v.tamano)
                         + (v.usuario ? ' · ' + v.usuario : '') + ' · ';
+                    fila.appendChild(resto);
                     const sha = document.createElement('code');
                     sha.textContent = v.sha.slice(0, 12);
                     sha.title = v.sha;
@@ -1945,6 +1959,28 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 }
             } catch (err) {
                 caja.textContent = 'Error: ' + err.message;
+            }
+        }
+
+        async function rlGuardarEtiqueta(juego, n, etiqueta, boton) {
+            const msg = document.getElementById('rl-edit-msg');
+            boton.disabled = true;
+            msg.style.color = '#9fd9a0';
+            msg.textContent = 'Guardando etiqueta...';
+            try {
+                const resp = await rlFetch('api/versiones', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sistema: juego.system, nombre: juego.filename, n, etiqueta }) });
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.message);
+                msg.style.color = '#7bffb0';
+                msg.textContent = 'Etiqueta de la versión #' + n + ' guardada: ' + data.data.etiqueta;
+                rlCargarVersiones(juego);
+                rlCargarJuegos();
+            } catch (err) {
+                msg.style.color = '#ff8a8a';
+                msg.textContent = 'Error: ' + err.message;
+            } finally {
+                boton.disabled = false;
             }
         }
 

@@ -17,7 +17,6 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -158,7 +157,7 @@ final class EsDeIconos {
         String base = "https://cdn.cloudflare.steamstatic.com/steam/apps/" + id + "/";
         for (String imagen : new String[]{"library_600x900_2x.jpg", "library_600x900.jpg", "header.jpg"}) {
             try {
-                HttpURLConnection con = (HttpURLConnection) new URL(base + imagen).openConnection();
+                HttpURLConnection con = ResolucionDns.abrir(base + imagen);
                 con.setConnectTimeout(10_000);
                 con.setReadTimeout(20_000);
                 if (con.getResponseCode() != 200) {

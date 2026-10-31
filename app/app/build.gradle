@@ -8,8 +8,8 @@ android {
         applicationId 'es.jarjar.romlibrary'
         minSdk 24
         targetSdk 34
-        versionCode 62
-        versionName '2.30.0'
+        versionCode 64
+        versionName '2.32.0'
     }
 
     // Keystore de debug FIJO, propio del proyecto -- mismo motivo aplicado ya

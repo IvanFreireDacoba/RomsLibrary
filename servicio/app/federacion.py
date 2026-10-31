@@ -383,6 +383,8 @@ def juegos_propios(sistema: str | None = None, texto: str | None = None, servir:
         c = cadenas.get(f"{j['system']}/{j['filename']}")
         cadena = c["cadena"] if c and c["cadena"][-1][0] == j["sha"] else []
         j["version"] = len(cadena) or None
+        # Etiqueta vX.Y.Z editable de la versión actual (cosmética); «v{n}» si no la tiene.
+        j["etiqueta"] = (c["etiqueta"] if c and cadena else None) or (f"v{j['version']}" if j["version"] else None)
         j["anteriores"] = [[s, t] for s, t in cadena[:-1]]
         j["codigo"] = c["codigo"] if c else None
         e = enlaces.get(f"{j['system']}/{j['filename']}")
@@ -407,8 +409,8 @@ def juegos_propios(sistema: str | None = None, texto: str | None = None, servir:
                 # Se sirve la versión limpia, aunque sea más vieja. El enlace
                 # del autor daría la corrupta: se descarga de aquí.
                 j.update(sha=limpia["sha"], version=limpia["n"], anteriores=j["anteriores"][:limpia["n"] - 1],
-                         sizeBytes=limpia["tamano"], corrupto=False, motivoCorrupto="", fuenteExterna=None,
-                         shaEnlace=None)
+                         etiqueta=f"v{limpia['n']}", sizeBytes=limpia["tamano"], corrupto=False, motivoCorrupto="",
+                         fuenteExterna=None, shaEnlace=None)
             elif servir:
                 j.update(descargable=False, fuenteExterna=None, shaEnlace=None)
     if not completo:

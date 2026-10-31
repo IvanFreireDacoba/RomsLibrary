@@ -86,6 +86,7 @@ EXTENSIONES_POR_SISTEMA = {
     "gb": {".gb", ".zip"},
     "gbc": {".gbc", ".zip"},
     "gba": {".gba", ".zip"},
+    "nds": {".nds", ".zip"},
     "n64": {".n64", ".z64", ".v64", ".zip"},
     "gc": {".iso", ".gcm", ".rvz", ".zip"},
     # Wii (USB Loader GX): .wbfs o .iso. Un .wbfs de más de 4 GB va partido
@@ -645,6 +646,15 @@ async def subir_juego(
         with open(destino_rom, "wb") as salida:
             while trozo := await rom.read(1024 * 1024):
                 salida.write(trozo)
+        # Un .zip de cartucho con basura dentro (readmes, __MACOSX/, ._*...) hace que
+        # RetroArch pueda cargar el fichero equivocado y cerrarse (caso real: una
+        # subida de "Pokémon Team Rocket" con 106 ficheros, el emulador cogía el
+        # ._rom de 220 bytes del resource-fork de macOS). Se deja solo la ROM;
+        # best-effort: si no se puede, la subida sigue valiendo con el zip tal cual.
+        try:
+            versiones.limpiar_zip_cartucho(destino_rom)
+        except Exception as e:
+            print(f"[subir_juego] no se pudo limpiar {destino_rom.name}: {e}", flush=True)
 
     caratula_guardada = None
     if cover is not None and cover.filename:

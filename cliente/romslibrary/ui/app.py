@@ -198,16 +198,16 @@ class App:
         if j.progreso >= 0 or j.en_cola:
             return
         if j.instalado:
-            self.dialogos.append(Confirmar("Desinstalar", f"¿Quitar «{j.fichero}» de esta consola? Antes se suben "
+            self.dialogos.append(Confirmar("Desinstalar", f"¿Quitar «{j.nombre_visible}» de esta consola? Antes se suben "
                                            "sus partidas al servidor.", "Desinstalar",
                                            lambda: self._en_hilo(self._desinstalar, j)))
         elif not j.descargable:
-            self.dialogos.append(Mensaje("Archivo corrupto", f"La librería ha comprobado que «{j.fichero}» es un archivo "
+            self.dialogos.append(Mensaje("Archivo corrupto", f"La librería ha comprobado que «{j.nombre_visible}» es un archivo "
                                          f"corrupto y no lo sirve hasta que suba una versión buena.\n\n{j.motivo_corrupto}"))
         elif j.corrupto:
-            texto = (f"La verificación automática de la librería sospecha que «{j.fichero}» está corrupto (nadie lo "
+            texto = (f"La verificación automática de la librería sospecha que «{j.nombre_visible}» está corrupto (nadie lo "
                      "ha comprobado aún)" if j.corrupto_automatico else
-                     f"La librería ha comprobado que «{j.fichero}» es un archivo corrupto")
+                     f"La librería ha comprobado que «{j.nombre_visible}» es un archivo corrupto")
             self.dialogos.append(Confirmar("Posible archivo corrupto" if j.corrupto_automatico else "Archivo corrupto",
                                            f"{texto}: puede no arrancar o fallar en la partida.\n\n{j.motivo_corrupto}",
                                            "Instalar igualmente", lambda: self.encolar(j)))
@@ -230,10 +230,10 @@ class App:
                                     lambda: self.cancelar_actual or self.salir)
                 j.instalado = True
                 guardados.sincronizar_juego(self.ajustes, j.sistema, j.fichero)
-                self.aviso(f"Instalado: {j.fichero}", tema.ACENTO)
+                self.aviso(f"Instalado: {j.nombre_visible}", tema.ACENTO)
             except Exception as e:  # noqa: BLE001
                 j.error = str(e)
-                self.aviso(f"Error con {j.fichero}: {e}", tema.ERROR, 8)
+                self.aviso(f"Error con {j.nombre_visible}: {e}", tema.ERROR, 8)
             finally:
                 j.progreso = -1.0
                 self._refiltrar()
@@ -243,7 +243,7 @@ class App:
             guardados.sincronizar_juego(self.ajustes, j.sistema, j.fichero)
             instalador.desinstalar(self.ajustes, j)
             j.instalado = False
-            self.aviso(f"Quitado de la consola: {j.fichero}")
+            self.aviso(f"Quitado de la consola: {j.nombre_visible}")
         except OSError as e:
             self.aviso(f"No se pudo borrar: {e}", tema.ERROR)
         self._refiltrar()
@@ -255,7 +255,7 @@ class App:
         opciones = []
         for v in j.variantes:
             idiomas = ", ".join(catalogo.IDIOMAS.get(i, i) for i in v.idiomas) or "Idioma sin indicar"
-            opciones.append(f"{idiomas} — {v.fichero}" + (" ✓" if v.instalado else "") + (" ⚠ corrupto" if v.corrupto else ""))
+            opciones.append(f"{idiomas} — {v.nombre_visible}" + (" ✓" if v.instalado else "") + (" ⚠ corrupto" if v.corrupto else ""))
         self.dialogos.append(Lista("Elegir idioma", opciones, lambda i: self.accion_principal(j.variantes[i])))
 
     # ---------------- partidas ----------------
@@ -618,7 +618,7 @@ class App:
         if len(j.variantes) > 1:
             partes.append(f"+{len(j.variantes) - 1} idioma(s)")
         if j.version and j.version > 1:
-            partes.append(f"v{j.version}")
+            partes.append(j.etiqueta or f"v{j.version}")
         if j.origen:
             partes.append("de " + j.libreria + (" ✔" if j.confianza >= 70 else ""))
         if j.fuente_externa:

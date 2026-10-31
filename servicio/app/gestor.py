@@ -364,6 +364,19 @@ def historial_versiones(request: Request, usuario: str = Usuario):
     return _ok(versiones.historial(q.get("sistema", ""), q.get("nombre", "")))
 
 
+@router.post("/api/versiones")
+async def etiqueta_version(request: Request, usuario: str = Usuario):
+    """Pone/cambia la etiqueta vX.Y.Z (editable) de una versión del juego."""
+    d = await request.json()
+    try:
+        return _ok(versiones.fijar_etiqueta(str(d.get("sistema", "")), str(d.get("nombre", "")),
+                                            int(d.get("n") or 0), str(d.get("etiqueta", ""))))
+    except HTTPException as e:
+        return _error(e)
+    except (TypeError, ValueError):
+        return _error(HTTPException(400, "Falta la versión a etiquetar."))
+
+
 @router.get("/api/externo")
 def info_externo(request: Request, usuario: str = Usuario):
     q = request.query_params

@@ -6,7 +6,6 @@ import android.widget.ImageView;
 
 import java.io.ByteArrayOutputStream;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -44,8 +43,7 @@ public final class ImageLoader {
         }
         new Thread(() -> {
             try {
-                URL url = new URL(completa);
-                HttpURLConnection con = (HttpURLConnection) url.openConnection();
+                HttpURLConnection con = ResolucionDns.abrir(completa);
                 ApiClient.ponerClave(con, token);
                 con.setConnectTimeout(8000);
                 con.setReadTimeout(15000);

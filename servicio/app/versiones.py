@@ -28,6 +28,7 @@ lo vuelve a enlazar con su juego.
 
 import hashlib
 import os
+import re
 import sqlite3
 import time
 import uuid
@@ -64,6 +65,11 @@ def inicializar() -> None:
             );
             """
         )
+        # Etiqueta vX.Y.Z editable a mano por el administrador (cosmética: el
+        # orden y la detección de updates siguen siendo por `n`/SHA). Las
+        # versiones que ya había muestran «v{n}» hasta que se les ponga una.
+        if "etiqueta" not in {c[1] for c in con.execute("PRAGMA table_info(versiones)")}:
+            con.execute("ALTER TABLE versiones ADD COLUMN etiqueta TEXT")
     ANTERIORES.mkdir(parents=True, exist_ok=True)
 
 
@@ -132,9 +138,44 @@ def renombrado(sistema: str, viejo: str, nuevo: str, mover_hash: bool) -> None:
 def _anadir_version(con, juego_id: str, sha: str, tamano: int, usuario: str, codigo: str | None) -> int:
     actual = _actual(con, juego_id)
     n = (actual["n"] if actual else 0) + 1
-    con.execute("INSERT INTO versiones (sha, juego_id, n, tamano, fecha, usuario, codigo) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (sha, juego_id, n, tamano, time.time(), usuario, codigo))
+    con.execute("INSERT INTO versiones (sha, juego_id, n, tamano, fecha, usuario, codigo, etiqueta) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (sha, juego_id, n, tamano, time.time(), usuario, codigo, etiqueta_por_defecto(n)))
     return n
+
+
+# ---------------- etiqueta vX.Y.Z (editable) ----------------
+
+# vX.Y.Z con un sufijo opcional «-texto» / «+texto» (p. ej. v3.0.6-Spanish,
+# v2.1.0-Español). El sufijo admite letras (con acentos), cifras, espacios y
+# unos pocos signos, pero no puede ir vacío ni empezar por espacio.
+_ETIQUETA_RE = re.compile(r"^v?\d{1,4}\.\d{1,4}\.\d{1,4}(?:[-+][0-9A-Za-zÀ-ÿ][0-9A-Za-zÀ-ÿ._\-() ]{0,39})?$")
+
+
+def etiqueta_por_defecto(n: int) -> str:
+    """Etiqueta inicial de una versión nueva: el administrador la edita luego."""
+    return f"v{n}.0.0"
+
+
+def normalizar_etiqueta(etiqueta: str) -> str:
+    etiqueta = (etiqueta or "").strip()
+    if not etiqueta or len(etiqueta) > 60 or not _ETIQUETA_RE.match(etiqueta):
+        raise HTTPException(400, "La etiqueta tiene que ser del tipo vX.Y.Z, opcionalmente con «-texto» al final "
+                                 "(por ejemplo v3.0.6-Spanish).")
+    return etiqueta if etiqueta[0] in "vV" else "v" + etiqueta
+
+
+def fijar_etiqueta(sistema: str, nombre: str, n: int, etiqueta: str) -> dict:
+    """El gestor pone/cambia la etiqueta vX.Y.Z de una versión concreta del juego."""
+    etiqueta = normalizar_etiqueta(etiqueta)
+    with _conectar() as con:
+        juego = con.execute("SELECT id FROM juegos WHERE ruta = ?", (f"{sistema}/{nombre}",)).fetchone()
+        if juego is None:
+            raise HTTPException(404, "Este juego aún no tiene versiones registradas.")
+        cur = con.execute("UPDATE versiones SET etiqueta = ? WHERE juego_id = ? AND n = ?", (etiqueta, juego["id"], n))
+        if cur.rowcount == 0:
+            raise HTTPException(404, f"Este juego no tiene una versión v{n}.")
+    return {"n": n, "etiqueta": etiqueta}
 
 
 # ---------------- consultas ----------------
@@ -147,17 +188,21 @@ def historial(sistema: str, nombre: str) -> dict | None:
         filas = con.execute("SELECT * FROM versiones WHERE juego_id = ? ORDER BY n DESC", (juego["id"],)).fetchall()
     return {"id": juego["id"], "codigo": juego["codigo"], "titulo": juego["titulo"],
             "versiones": [{"n": f["n"], "sha": f["sha"], "tamano": f["tamano"], "fecha": f["fecha"],
-                           "usuario": f["usuario"]} for f in filas]}
+                           "usuario": f["usuario"], "etiqueta": f["etiqueta"] or f"v{f['n']}"} for f in filas]}
 
 
 def cadenas_propias() -> dict[str, dict]:
-    """ruta -> {"codigo", "cadena": [(sha, tamano), ...] de la más vieja a la actual}."""
+    """ruta -> {"codigo", "etiqueta" (la de la versión actual), "cadena": [(sha, tamano), ...]
+    de la más vieja a la actual}."""
     with _conectar() as con:
-        filas = con.execute("SELECT j.ruta, j.codigo, v.sha, v.tamano FROM juegos j JOIN versiones v ON v.juego_id = j.id "
+        filas = con.execute("SELECT j.ruta, j.codigo, v.sha, v.tamano, v.n, v.etiqueta "
+                            "FROM juegos j JOIN versiones v ON v.juego_id = j.id "
                             "WHERE j.ruta IS NOT NULL ORDER BY j.ruta, v.n").fetchall()
     res: dict[str, dict] = {}
     for f in filas:
-        res.setdefault(f["ruta"], {"codigo": f["codigo"], "cadena": []})["cadena"].append((f["sha"], f["tamano"]))
+        d = res.setdefault(f["ruta"], {"codigo": f["codigo"], "etiqueta": None, "cadena": []})
+        d["cadena"].append((f["sha"], f["tamano"]))
+        d["etiqueta"] = f["etiqueta"] or f"v{f['n']}"      # la última fila (n mayor) = la actual
     return res
 
 
@@ -176,6 +221,57 @@ def _sha_fichero(ruta: Path) -> str:
         while trozo := f.read(4 * 1024 * 1024):
             h.update(trozo)
     return h.hexdigest()
+
+
+# Extensión del ROM crudo dentro del .zip, por sistema (solo cosmética: RetroArch
+# carga el .zip por su contenido, no por el nombre interno).
+_EXT_CRUDA = {"gb": ".gb", "gbc": ".gbc", "gba": ".gba", "n64": ".z64"}
+
+
+def _normalizar_contenedor(temporal: Path, ruta: Path, sistema: str) -> Path:
+    """Deja el fichero subido en el MISMO contenedor con el que se guarda el
+    juego (la extensión de `ruta`): así una versión nueva se valida por su
+    CONTENIDO y no por cómo llegue envuelta. Caso soportado: el juego se guarda
+    en `.zip` (como lo acepta RetroArch) y lo subido es un cartucho crudo del
+    mismo sistema -> se mete en un `.zip`. Devuelve la ruta a usar: un temporal
+    nuevo si normaliza (y borra el viejo), o el mismo `temporal` si no toca."""
+    import zipfile
+    if ruta.suffix.lower() != ".zip" or cabeceras.es_zip(temporal):
+        return temporal
+    if cabeceras.codigo_crudo(temporal, sistema) is None:
+        return temporal                       # no es un cartucho reconocible: que lo rechace aplicar()
+    ext = _EXT_CRUDA.get(sistema, "")
+    nuevo = temporal.with_name(temporal.name + ".zip")
+    with zipfile.ZipFile(nuevo, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(temporal, arcname=f"{ruta.stem}{ext}")
+    temporal.unlink(missing_ok=True)
+    return nuevo
+
+
+def limpiar_zip_cartucho(ruta: Path) -> bool:
+    """Si `ruta` es un .zip con UNA sola ROM de cartucho y además basura dentro
+    (carpetas, readmes, restos de macOS __MACOSX/ y ._*), lo reescribe dejando
+    SOLO la ROM. Si no, RetroArch puede cargar el fichero equivocado del zip
+    -p. ej. el ._fichero de 220 bytes del resource-fork de macOS en vez de la
+    ROM real- y cerrarse (caso real "Pokémon Team Rocket" subido como zip con
+    106 ficheros). Devuelve True si tocó el fichero. No toca zips con cero o
+    varias ROMs (ambiguo: que decida aplicar/registrar)."""
+    import zipfile
+    if ruta.suffix.lower() != ".zip" or not cabeceras.es_zip(ruta):
+        return False
+    roms = cabeceras.roms_en_zip(ruta)
+    if len(roms) != 1:
+        return False
+    with zipfile.ZipFile(ruta) as z:
+        ficheros = [i.filename for i in z.infolist() if not i.is_dir()]
+        if ficheros == roms:
+            return False                      # ya está limpio: la ROM es el único fichero
+        datos = z.read(roms[0])
+    tmp = ruta.with_name(ruta.name + ".limpio")
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(Path(roms[0]).name, datos)   # aplana subcarpetas ("Carpeta/rom.gba" -> "rom.gba")
+    tmp.replace(ruta)                            # mismo disco: atómico
+    return True
 
 
 def _juego_actualizable(sistema: str, nombre: str, extension_nueva: str):
@@ -211,7 +307,11 @@ async def actualizar(sistema: str, nombre: str, rom, usuario: str, sin_cabecera_
                 h.update(trozo)
                 tamano += len(trozo)
                 salida.write(trozo)
-        return await aplicar(sistema, nombre, temporal, h.hexdigest(), tamano, usuario, sin_cabecera_ok)
+        sha = h.hexdigest()
+        nuevo = _normalizar_contenedor(temporal, ruta, sistema)
+        if nuevo is not temporal:
+            temporal, sha, tamano = nuevo, _sha_fichero(nuevo), nuevo.stat().st_size
+        return await aplicar(sistema, nombre, temporal, sha, tamano, usuario, sin_cabecera_ok)
     finally:
         temporal.unlink(missing_ok=True)
 

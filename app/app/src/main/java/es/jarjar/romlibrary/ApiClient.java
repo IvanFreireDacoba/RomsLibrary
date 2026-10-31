@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.net.URLEncoder;
 import java.util.Map;
@@ -57,8 +56,7 @@ public final class ApiClient {
     }
 
     public static String getTexto(String baseUrl, String token, String ruta, int timeoutMs) throws IOException {
-        URL url = new URL(baseUrl + ruta);
-        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        HttpURLConnection con = ResolucionDns.abrir(baseUrl + ruta);
         ponerClave(con, token);
         con.setConnectTimeout(timeoutMs);
         con.setReadTimeout(timeoutMs);
@@ -94,8 +92,7 @@ public final class ApiClient {
     /** Igual que la anterior pero notificando bytes descargados/total en cada trozo leído. */
     public static void descargarAFichero(String baseUrl, String token, String ruta, OutputStream destino,
                                           ProgresoDescarga progreso) throws IOException {
-        URL url = new URL(baseUrl + ruta);
-        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        HttpURLConnection con = ResolucionDns.abrir(baseUrl + ruta);
         ponerClave(con, token);
         con.setConnectTimeout(8000);
         con.setReadTimeout(30000);
@@ -188,8 +185,7 @@ public final class ApiClient {
                     throw new IOException("Descarga interrumpida", ie);
                 }
             }
-            URL url = new URL(baseUrl + ruta);
-            HttpURLConnection con = (HttpURLConnection) url.openConnection();
+            HttpURLConnection con = ResolucionDns.abrir(baseUrl + ruta);
             ponerClave(con, token);
             con.setConnectTimeout(10000);
             con.setReadTimeout(30000);
@@ -277,7 +273,6 @@ public final class ApiClient {
     /** POST de formulario (application/x-www-form-urlencoded) que devuelve el cuerpo de la respuesta. */
     public static String postFormulario(String baseUrl, String token, String ruta, Map<String, String> campos)
             throws IOException {
-        URL url = new URL(baseUrl + ruta);
         StringBuilder cuerpo = new StringBuilder();
         for (Map.Entry<String, String> c : campos.entrySet()) {
             if (cuerpo.length() > 0) {
@@ -286,7 +281,7 @@ public final class ApiClient {
             cuerpo.append(URLEncoder.encode(c.getKey(), "UTF-8")).append('=')
                     .append(URLEncoder.encode(c.getValue(), "UTF-8"));
         }
-        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        HttpURLConnection con = ResolucionDns.abrir(baseUrl + ruta);
         ponerClave(con, token);
         con.setRequestMethod("POST");
         con.setDoOutput(true);
@@ -311,7 +306,7 @@ public final class ApiClient {
 
     /** POST con cuerpo JSON (servicio de partidas) que devuelve el cuerpo de la respuesta. */
     public static String postJson(String baseUrl, String token, String ruta, JSONObject datos) throws IOException {
-        HttpURLConnection con = (HttpURLConnection) new URL(baseUrl + ruta).openConnection();
+        HttpURLConnection con = ResolucionDns.abrir(baseUrl + ruta);
         ponerClave(con, token);
         con.setRequestMethod("POST");
         con.setDoOutput(true);
@@ -343,8 +338,7 @@ public final class ApiClient {
     public static void subirFichero(String baseUrl, String token, String ruta, Map<String, String> campos,
                                     String nombreFichero, File local) throws IOException {
         String boundary = "----RomLibrary" + UUID.randomUUID();
-        URL url = new URL(baseUrl + ruta);
-        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        HttpURLConnection con = ResolucionDns.abrir(baseUrl + ruta);
         ponerClave(con, token);
         con.setRequestMethod("POST");
         con.setDoOutput(true);

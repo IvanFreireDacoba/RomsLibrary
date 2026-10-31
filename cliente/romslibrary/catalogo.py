@@ -48,6 +48,7 @@ class Juego:
     descargable: bool = True             # confirmado corrupto sin versión limpia: la librería no lo sirve
     motivo_corrupto: str = ""
     version: int | None = None
+    etiqueta: str | None = None          # etiqueta vX.Y.Z editable de la versión actual
     # Estado local
     instalado: bool = False
     variantes: list["Juego"] = field(default_factory=list)
@@ -63,7 +64,15 @@ class Juego:
 
     @property
     def nombre_visible(self) -> str:
-        return self.fichero
+        """El nombre que se ENSEÑA, sin extensión: el título de la librería, o
+        el fichero sin su extensión. Los grupos (disco) conservan su nombre.
+        `fichero` sigue siendo el identificador para descargar/instalar/guardar."""
+        if self.titulo:
+            return self.titulo
+        if self.es_grupo:
+            return self.fichero
+        punto = self.fichero.rfind(".")
+        return self.fichero[:punto] if punto > 0 else self.fichero
 
     def etiqueta_idiomas(self) -> str:
         return " ".join(i.upper() for i in self.idiomas)
@@ -118,6 +127,7 @@ def parsear(datos, base: str, sistemas_validos: list[str]) -> list[Juego]:
         j.descargable = o.get("descargable") is not False
         j.motivo_corrupto = str(o.get("motivoCorrupto") or "")[:300]
         j.version = o.get("version") if isinstance(o.get("version"), int) else None
+        j.etiqueta = str(o["etiqueta"])[:60] if isinstance(o.get("etiqueta"), str) and o["etiqueta"] else None
         lista.append(j)
     return lista
 

@@ -446,26 +446,42 @@ public class MainActivity extends BaseActivity {
             }
             v.setEnabled(false);
             new Thread(() -> {
+                // La librería (API principal) y el servicio de PARTIDAS (guardados
+                // en la nube, identidad de la consola) son conexiones distintas. Si
+                // la librería conecta, se entra aunque partidas falle: un fallo de
+                // esa conexión secundaria no es un error alarmante ni bloqueante.
+                Cuenta lista;
                 try {
-                    Cuenta lista = Cuenta.configurar(getApplicationContext(), url, clave);
-                    Partidas.registrar(getApplicationContext(), nombre);
-                    runOnUiThread(() -> {
-                        cuenta = lista;
-                        baseUrl = lista.url;
-                        token = lista.clave;
-                        actualizarSubtitulo();
-                        dialogo.dismiss();
-                        Toast.makeText(this, "Consola " + Partidas.nombre(this) + " · " + Partidas.identificador(this),
-                                Toast.LENGTH_LONG).show();
-                        cargarSistemasDisponibles();
-                        cargarJuegos();
-                    });
+                    lista = Cuenta.configurar(getApplicationContext(), url, clave);
                 } catch (Exception e) {
                     runOnUiThread(() -> {
                         v.setEnabled(true);
                         Toast.makeText(this, "No se pudo conectar: " + e.getMessage(), Toast.LENGTH_LONG).show();
                     });
+                    return;
                 }
+                boolean partidasOk = true;
+                try {
+                    Partidas.registrar(getApplicationContext(), nombre);
+                } catch (Exception e) {
+                    partidasOk = false;
+                    android.util.Log.w("RomLibrary", "La librería conectó pero el servicio de partidas no responde", e);
+                }
+                final Cuenta listaFinal = lista;
+                final boolean partidasConectado = partidasOk;
+                runOnUiThread(() -> {
+                    cuenta = listaFinal;
+                    baseUrl = listaFinal.url;
+                    token = listaFinal.clave;
+                    actualizarSubtitulo();
+                    dialogo.dismiss();
+                    Toast.makeText(this, partidasConectado
+                                    ? "Consola " + Partidas.nombre(this) + " · " + Partidas.identificador(this)
+                                    : "Conectado a la librería. Los guardados en la nube no están disponibles ahora mismo.",
+                            Toast.LENGTH_LONG).show();
+                    cargarSistemasDisponibles();
+                    cargarJuegos();
+                });
             }).start();
         });
         });
@@ -1222,6 +1238,8 @@ public class MainActivity extends BaseActivity {
             juego.shaEnlace = shaEnlace.matches("[0-9a-f]{64}") ? shaEnlace : juego.sha;
             juego.confianza = o.optInt("confianza", 0);
             juego.titulo = o.isNull("titulo") ? null : o.optString("titulo", null);
+            juego.version = o.optInt("version", 0);
+            juego.etiqueta = o.isNull("etiqueta") ? null : o.optString("etiqueta", null);
             JSONArray idiomas = o.optJSONArray("idiomas");
             for (int k = 0; idiomas != null && k < idiomas.length(); k++) {
                 String idioma = idiomas.optString(k, "");
@@ -1404,7 +1422,7 @@ public class MainActivity extends BaseActivity {
         } else if (!juego.descargable) {
             new AlertDialog.Builder(this)
                     .setTitle("Archivo corrupto")
-                    .setMessage("La librería ha comprobado que «" + juego.nombreFichero + "» es un archivo corrupto y no lo "
+                    .setMessage("La librería ha comprobado que «" + juego.nombreMostrado() + "» es un archivo corrupto y no lo "
                             + "sirve hasta que suba una versión buena.\n\n" + (juego.motivoCorrupto == null ? "" : juego.motivoCorrupto))
                     .setPositiveButton("Vale", null)
                     .show();
@@ -1412,9 +1430,9 @@ public class MainActivity extends BaseActivity {
             new AlertDialog.Builder(this)
                     .setTitle(juego.corruptoAutomatico ? "Posible archivo corrupto" : "Archivo corrupto")
                     .setMessage((juego.corruptoAutomatico
-                            ? "La verificación automática de la librería sospecha que «" + juego.nombreFichero
+                            ? "La verificación automática de la librería sospecha que «" + juego.nombreMostrado()
                               + "» está corrupto (nadie lo ha comprobado aún): puede no arrancar "
-                            : "La librería ha comprobado que «" + juego.nombreFichero + "» es un archivo corrupto: puede no arrancar ")
+                            : "La librería ha comprobado que «" + juego.nombreMostrado() + "» es un archivo corrupto: puede no arrancar ")
                             + "o fallar durante la partida.\n\n" + (juego.motivoCorrupto == null ? "" : juego.motivoCorrupto)
                             + "\n\n¿Instalarlo igualmente?")
                     .setPositiveButton("Instalar igualmente", (d, w) -> solicitarDescarga(juego))
@@ -1482,7 +1500,7 @@ public class MainActivity extends BaseActivity {
                 nombres.add(NOMBRES_IDIOMA.getOrDefault(codigo, codigo));
             }
             android.text.SpannableStringBuilder opcion = new android.text.SpannableStringBuilder(
-                    (nombres.isEmpty() ? "Idioma sin indicar" : String.join(", ", nombres)) + " — " + v.nombreFichero
+                    (nombres.isEmpty() ? "Idioma sin indicar" : String.join(", ", nombres)) + " — " + v.nombreMostrado()
                     + (v.instaladoLocal ? " ✓" : ""));
             if (v.corrupto) {
                 int inicio = opcion.length();

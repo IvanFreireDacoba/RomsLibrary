@@ -51,6 +51,17 @@ def _gba(cab: bytes):
     return ("gba:" + codigo, titulo) if _imprimible(codigo) else None
 
 
+def _nds(cab: bytes):
+    # Cabecera de cartucho NDS: título en 0x00 (12 bytes), código de juego en
+    # 0x0C (4), y el CRC del logo de Nintendo (idéntico en todos los cartuchos
+    # oficiales) en 0x15C = 0xCF56 -> bytes 56 CF. Sirve de marca de validez,
+    # igual que el byte fijo 0x96 del GBA o el logo del GB.
+    if len(cab) < 0x15E or cab[0x15C:0x15E] != b"\x56\xCF":
+        return None
+    codigo, titulo = _txt(cab[0x0C:0x10]), _txt(cab[0x00:0x0C])
+    return ("nds:" + codigo, titulo) if _imprimible(codigo) else None
+
+
 def _n64(cab: bytes):
     if len(cab) < 0x40:
         return None
@@ -152,7 +163,7 @@ def _psp(f):
 
 # ---------------- entrada ----------------
 
-_CARTUCHOS = {".gb": _gb, ".gbc": _gb, ".gba": _gba, ".n64": _n64, ".z64": _n64, ".v64": _n64}
+_CARTUCHOS = {".gb": _gb, ".gbc": _gb, ".gba": _gba, ".nds": _nds, ".n64": _n64, ".z64": _n64, ".v64": _n64}
 
 
 def _de_flujo(f, extension: str, sistema: str):
@@ -169,22 +180,65 @@ def _de_flujo(f, extension: str, sistema: str):
     return None
 
 
+def roms_en_zip(ruta: Path) -> list[str]:
+    """Nombres de los miembros con formato de ROM de cartucho dentro de un .zip,
+    ignorando la basura típica de un fan game zipeado (carpetas, readmes, y los
+    restos de macOS: __MACOSX/, ._* y .DS_Store). Lo usan `codigo` (para leer la
+    ÚNICA ROM que lleve dentro) y la limpieza de subidas (ver
+    versiones.limpiar_zip_cartucho)."""
+    try:
+        with zipfile.ZipFile(ruta) as z:
+            return [i.filename for i in z.infolist()
+                    if not i.is_dir()
+                    and not i.filename.startswith("__MACOSX/")
+                    and not Path(i.filename).name.startswith("._")
+                    and Path(i.filename).suffix.lower() in _CARTUCHOS]
+    except (OSError, zipfile.BadZipFile):
+        return []
+
+
 def codigo(ruta: Path, sistema: str, nombre: str | None = None):
     """Código del juego (y título interno) del ROM en `ruta`. `nombre` da la
     extensión si `ruta` es un temporal sin ella (subida en curso)."""
     extension = Path(nombre or ruta.name).suffix.lower()
     try:
         if extension == ".zip":
-            with zipfile.ZipFile(ruta) as z:
-                dentro = [i for i in z.infolist() if not i.is_dir()]
-                if len(dentro) != 1:
-                    return None                                         # varios ficheros: sin código claro
-                ext_dentro = Path(dentro[0].filename).suffix.lower()
-                if ext_dentro in _CARTUCHOS:
-                    with z.open(dentro[0]) as f:
-                        return _CARTUCHOS[ext_dentro](f.read(0x200))
-                return None                                             # discos en zip: no se recorren
+            roms = roms_en_zip(ruta)
+            if len(roms) != 1:
+                return None                                            # ninguna o varias ROMs: sin código claro
+            with zipfile.ZipFile(ruta) as z, z.open(roms[0]) as f:
+                return _CARTUCHOS[Path(roms[0]).suffix.lower()](f.read(0x200))
         with open(ruta, "rb") as f:
             return _de_flujo(f, extension, sistema)
     except (OSError, zipfile.BadZipFile, ValueError):
+        return None
+
+
+# ---------------- validación por CONTENIDO (normalizar subidas) ----------------
+
+# sistema -> detector de cartucho crudo. Para reconocer el juego por su
+# contenido aunque llegue en crudo (p. ej. un .gba suelto) cuando se guarda
+# comprimido en .zip.
+_CARTUCHO_POR_SISTEMA = {"gb": _gb, "gbc": _gb, "gba": _gba,
+                         "n64": _n64, "z64": _n64, "v64": _n64}
+
+
+def es_zip(ruta: Path) -> bool:
+    try:
+        return zipfile.is_zipfile(ruta)
+    except OSError:
+        return False
+
+
+def codigo_crudo(ruta: Path, sistema: str):
+    """Como `codigo`, pero leyendo el fichero como CARTUCHO crudo del sistema,
+    sin mirar su nombre/extensión. Devuelve None si el sistema no es de
+    cartucho o si el contenido no es un cartucho válido de ese sistema."""
+    det = _CARTUCHO_POR_SISTEMA.get(sistema)
+    if det is None:
+        return None
+    try:
+        with open(ruta, "rb") as f:
+            return det(f.read(0x200))
+    except OSError:
         return None
