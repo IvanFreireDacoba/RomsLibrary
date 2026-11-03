@@ -4,3 +4,12 @@ uvicorn==0.53.0
 python-multipart==0.0.32
 pillow==12.3.0
 httpx==0.28.1
+# Switch comprimido (.nsz/.xcz), ver app/comprimidos.py. Versiones fijadas.
+nsz==5.0.0
+pycryptodome==4.3.0
+zstandard==0.25.0
+enlighten==1.14.1
+blessed==1.52.0
+jinxed==2.1.0
+prefixed==0.9.0
+wcwidth==0.9.4

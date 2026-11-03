@@ -445,7 +445,7 @@ static void leer_mensaje_error(Conexion *c, int codigo, char *error, size_t n) {
 /* Descarga `url` a `w` (que ya tiene `base`), sumando `antes` al progreso. */
 static int descargar(Conexion *c, const char *url, const char *clave, Escritor *w, long long antes,
                      long long total_trabajo, char *error, size_t n) {
-    int reintentos = 0, redirecciones = 0;
+    int reintentos = 0, redirecciones = 0, esperas = 0;
     static char url_actual[2048];
     for (;;) {
         long long hecho = escritor_existente(w);
@@ -466,6 +466,21 @@ static int descargar(Conexion *c, const char *url, const char *clave, Escritor *
             snprintf(url_actual, sizeof url_actual, "%s", r.ubicacion);
             url = url_actual;
             clave = NULL;                       /* la clave nunca sale de nuestra librería */
+            continue;
+        }
+        if (r.estado == 503 && r.reintentar_en > 0 && esperas++ < 240) {
+            /* El servidor está preparando el fichero (p. ej. descomprimiendo un
+             * juego de Switch, ver servicio/app/comprimidos.py): se espera lo que
+             * pide, SIN gastar intentos, hasta ~1 h en total. */
+            http_cerrar(c);
+            int s = r.reintentar_en > 60 ? 60 : r.reintentar_en;
+            for (int t = 0; t < s * 2; t++) {
+                if (cancelar_actual || parar || plat_debe_salir()) {
+                    snprintf(error, n, "Cancelado.");
+                    return -2;
+                }
+                plat_dormir_ms(500);
+            }
             continue;
         }
         if (r.estado != 200 && r.estado != 206) {

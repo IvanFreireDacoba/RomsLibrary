@@ -33,12 +33,18 @@ def _tupla(v: str) -> tuple:
     return tuple(int(x) if x.isdigit() else 0 for x in v.split("."))
 
 
-def comprobar() -> dict | None:
-    """{"version", "sha256", "tamano"} si hay una versión más nueva para esta máquina."""
+def comprobar(con_errores: bool = False) -> dict | None:
+    """{"version", "sha256", "tamano"} si hay una versión más nueva para esta
+    máquina. con_errores=True: un fallo de red se lanza (api.ErrorApi) en vez
+    de confundirse con «no hay nada nuevo», para poder reintentar."""
     try:
-        info = api.get_json(api.url_de(ORIGEN_ACTUALIZACIONES, "cliente_version"), timeout=10)
+        info = api.get_json(api.url_de(ORIGEN_ACTUALIZACIONES, "cliente_version"), timeout=15)
         paquete = info["paquetes"][plataforma.id_paquete()]
-    except (api.ErrorApi, KeyError, TypeError):
+    except api.ErrorApi:
+        if con_errores:
+            raise
+        return None
+    except (KeyError, TypeError):
         return None
     if _tupla(str(info.get("version", "0"))) <= _tupla(VERSION):
         return None

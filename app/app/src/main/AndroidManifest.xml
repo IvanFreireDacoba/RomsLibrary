@@ -71,6 +71,14 @@
             android:name="es.jarjar.romlibrary.ConsolasActivity"
             android:exported="false" />
 
+        <!-- Menú «Versión»: versión, términos, políticas y licencias (ver VersionActivity). -->
+        <activity
+            android:name="es.jarjar.romlibrary.VersionActivity"
+            android:exported="false" />
+        <activity
+            android:name="es.jarjar.romlibrary.DocumentoActivity"
+            android:exported="false" />
+
         <!-- Mantiene vivo el proceso mientras hay una descarga (ver DescargaService). -->
         <service
             android:name="es.jarjar.romlibrary.DescargaService"

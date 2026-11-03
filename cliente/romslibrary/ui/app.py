@@ -7,8 +7,23 @@ pero para mando.
   Start menú (partidas, ajustes, actualizaciones)    B salir
 
 El trabajo de red va en hilos; la pantalla solo lee su estado.
+
+Arranque por fases (ninguna espera a la siguiente):
+  1. «hola»: petición ligera que el servidor contesta al momento. Con ella la
+     consola ya se ve CONECTADA (indicador de la cabecera).
+  2. La tabla de juegos (solo metadatos, con gzip), que se pinta al llegar.
+  3. Las carátulas, perezosas: solo las de las filas en pantalla, las últimas
+     pedidas primero, dos a la vez, reducidas y con caché en disco.
+La comprobación de versión nueva de la app va en su propio hilo, con
+reintentos: no depende de que funcione nada más.
+
+Pruebas sin consola (ver empaquetado/probar.sh): RL_TAMANO=640x480 abre una
+ventana de ese tamaño, RL_GUION ejecuta acciones guionizadas
+(«esperar 2; abajo; captura lista; menu; salir») y RL_CAPTURAS es la carpeta
+donde se guardan las capturas.
 """
 
+import os
 import queue
 import sys
 import threading
@@ -17,28 +32,71 @@ from pathlib import Path
 
 import pygame
 
-from .. import VERSION, acceso, actualizar_roms, api, autoactualizar, catalogo, guardados, instalador, partidas, plataforma
+from .. import (VERSION, acceso, actualizar_roms, api, autoactualizar, catalogo, guardados, instalador, legal, partidas,
+               plataforma)
 from ..ajustes import Ajustes, carpeta_datos
 from . import tema
-from .dialogos import Confirmar, Lista, Mensaje, SelectorCarpeta, Teclado
+from .dialogos import Confirmar, Lista, Mensaje, SelectorCarpeta, Teclado, TextoLargo
 from .entrada import Entrada
 
 LIBRERIAS = [("personal", "Mi librería"), ("otras", "Otras librerías"), ("todas", "Todas")]
 FILTROS = ["Todos", "Instalados", "No instalados"]
+INICIO = time.monotonic()
+_RECURSOS = Path(__file__).resolve().parent.parent / "recursos"
+PORTADA_MAX = 320                  # px de alto como mucho en memoria (consolas con 1 GB de RAM)
+
+
+def _fase(texto: str) -> None:
+    print(f"[fases] {time.monotonic() - INICIO:6.2f}s {texto}", flush=True)
+
+
+def _preparar_sdl() -> None:
+    """Antes de pygame.init(). Mandos: el mapeado de SDL_GameControllerDB que
+    va en el paquete (el SDL_GAMECONTROLLERCONFIG de PortMaster, si lo hay,
+    manda sobre él). Vídeo: sin X11 ni Wayland (Knulli, muOS) se usa KMS/DRM."""
+    db = _RECURSOS / "gamecontrollerdb.txt"
+    if db.is_file() and not os.environ.get("SDL_GAMECONTROLLERCONFIG_FILE"):
+        os.environ["SDL_GAMECONTROLLERCONFIG_FILE"] = str(db)
+    if sys.platform.startswith("linux") and not os.environ.get("SDL_VIDEODRIVER") \
+            and not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        os.environ["SDL_VIDEODRIVER"] = "kmsdrm"
+        os.environ["_RL_KMSDRM_AUTO"] = "1"
+
+
+def _abrir_pantalla(modo, flags):
+    try:
+        return pygame.display.set_mode(modo, flags)
+    except pygame.error:
+        if not os.environ.pop("_RL_KMSDRM_AUTO", None):
+            raise
+        # kmsdrm no ha ido: lo que SDL encuentre por sí mismo.
+        os.environ.pop("SDL_VIDEODRIVER", None)
+        pygame.display.quit()
+        pygame.display.init()
+        return pygame.display.set_mode(modo, flags)
 
 
 class App:
     def __init__(self, ventana: bool = False):
         self.ajustes = Ajustes()
+        _preparar_sdl()
         pygame.init()
+        if not pygame.display.get_init() and os.environ.pop("_RL_KMSDRM_AUTO", None):
+            # Sin KMS/DRM usable: lo que SDL encuentre por sí mismo.
+            os.environ.pop("SDL_VIDEODRIVER", None)
+            pygame.display.init()
         pygame.key.set_repeat(300, 45)
         pygame.display.set_caption("RomsLibrary")
         info = pygame.display.Info()
-        if ventana or (self.ajustes.plataforma.id in ("windows", "linux", "esde", "emudeck")
-                       and info.current_w > 1300):
-            self.pantalla = pygame.display.set_mode((1280, 800), pygame.RESIZABLE)
+        tamano_prueba = os.environ.get("RL_TAMANO")
+        if tamano_prueba:
+            self.pantalla = _abrir_pantalla(tuple(int(x) for x in tamano_prueba.lower().split("x")), 0)
+        elif ventana or (self.ajustes.plataforma.id in ("windows", "linux", "esde", "emudeck")
+                         and info.current_w > 1300):
+            self.pantalla = _abrir_pantalla((1280, 800), pygame.RESIZABLE)
         else:
-            self.pantalla = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+            self.pantalla = _abrir_pantalla((0, 0), pygame.FULLSCREEN)
+        _fase(f"pantalla {self.pantalla.get_size()} con {pygame.display.get_driver()}")
         tema.configurar(self.pantalla.get_height())
         pygame.mouse.set_visible(ventana or sys.platform == "win32")
         self.entrada = Entrada(bool(self.ajustes["intercambiar_ab"]))
@@ -59,14 +117,22 @@ class App:
         self.portadas: dict[str, pygame.Surface | None] = {}
         self.portadas_crudas: dict[str, pygame.Surface | None] = {}
         self.pedidas: set[str] = set()
-        self.cola_portadas: queue.Queue = queue.Queue()
+        self.cola_portadas: queue.LifoQueue = queue.LifoQueue()   # lo último pedido (lo que se ve) primero
+        self.vistas: dict[str, float] = {}               # portada -> última vez que estuvo en pantalla
+        self.conexion = "conectando"                    # conectando | conectada | sin conexión
+        self.info_servidor: dict = {}
+        self.primera_portada = False
+        self.guion = _Guion(self)
         self.cache_portadas = carpeta_datos() / "portadas"
         self.salir = False
         threading.Thread(target=self._trabajador_descargas, daemon=True).start()
         for _ in range(2):
             threading.Thread(target=self._trabajador_portadas, daemon=True).start()
-        threading.Thread(target=self._al_empezar, daemon=True).start()
-        self.cargar()
+        if not plataforma.reconocida(self.ajustes.plataforma) and not self.ajustes["roms_elegida"]:
+            self.dialogos.append(SelectorCarpeta("¿Dónde están los ROMs de esta consola?", self.ajustes["roms"],
+                                                 self._fijar_roms))
+        threading.Thread(target=self._comprobar_app, daemon=True).start()
+        threading.Thread(target=self._conectar, daemon=True).start()
 
     # ---------------- utilidades ----------------
 
@@ -81,6 +147,45 @@ class App:
         threading.Thread(target=funcion, args=args, daemon=True).start()
 
     # ---------------- arranque y catálogo ----------------
+
+    def _conectar(self) -> None:
+        """Fase 1: «hola». Al contestar, conectada y se pide la tabla (fase 2) y
+        lo demás del arranque. Sin conexión se reintenta solo."""
+        espera = 3
+        while not self.salir:
+            self.conexion = "conectando"
+            try:
+                self.info_servidor = api.hola(self.ajustes["url"], self.ajustes["clave"] or None)
+                self.conexion = "conectada"
+                _fase(f"conectada ({self.info_servidor.get('servicio', 'servidor antiguo')})")
+                break
+            except api.ErrorApi as e:
+                self.conexion = "sin conexión"
+                self.estado = f"Sin conexión: {e}. Reintentando…"
+                time.sleep(espera)
+                espera = min(espera * 2, 30)
+        if self.salir:
+            return
+        self.cargar()
+        self._al_empezar()
+
+    def _comprobar_app(self) -> None:
+        """Versión nueva de la app, por su cuenta: si sund.es no contesta se
+        reintenta (antes, un fallo en el arranque la dejaba sin mirar)."""
+        if not autoactualizar.empaquetada():
+            return
+        for espera in (0, 10, 30, 90, 300):
+            time.sleep(espera)
+            try:
+                nueva = autoactualizar.comprobar(con_errores=True)
+            except api.ErrorApi:
+                continue
+            if nueva:
+                self.dialogos.append(Confirmar(
+                    "Actualización disponible", f"Hay una versión nueva de RomsLibrary: {nueva['version']} "
+                    f"(tienes la {VERSION}). Se descarga, se instala y la app se vuelve a abrir.",
+                    "Actualizar ahora", lambda: self._en_hilo(self._actualizar_app, nueva), "Más tarde"))
+            return
 
     def _al_empezar(self) -> None:
         """Alta en el servidor (para las partidas), partidas de lo instalado,
@@ -98,16 +203,17 @@ class App:
                     self.cargar()
         except (api.ErrorApi, KeyError, TypeError) as e:
             self.aviso(f"No se pudo registrar la consola: {e}", tema.AVISO)
-        self.sincronizar_partidas(silencioso=True)
-        hechos = actualizar_roms.comprobar(self.ajustes, lambda t: self.aviso(t, tema.ACENTO))
+        try:
+            self.sincronizar_partidas(silencioso=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[arranque] partidas: {e}", flush=True)
+        try:
+            hechos = actualizar_roms.comprobar(self.ajustes, lambda t: self.aviso(t, tema.ACENTO))
+        except Exception as e:  # noqa: BLE001 -- que no tumbe el resto del arranque
+            hechos = 0
+            print(f"[arranque] actualizar ROMs: {e}", flush=True)
         if hechos:
             self.cargar()
-        nueva = autoactualizar.comprobar() if autoactualizar.empaquetada() else None
-        if nueva:
-            self.dialogos.append(Confirmar(
-                "Actualización disponible", f"Hay una versión nueva de RomsLibrary: {nueva['version']} "
-                f"(tienes la {VERSION}). Se descarga, se instala y la app se vuelve a abrir.",
-                "Actualizar ahora", lambda: self._en_hilo(self._actualizar_app, nueva), "Más tarde"))
 
     def _actualizar_app(self, nueva: dict) -> None:
         self.estado = f"Descargando la versión {nueva['version']}…"
@@ -138,6 +244,7 @@ class App:
             lista = [activos.get((j.sistema, j.fichero, j.origen), j) for j in lista]
             self.juegos = lista
             self.estado = ""
+            _fase(f"tabla de juegos ({len(lista)})")
         except api.ErrorApi as e:
             self.estado = f"Error: {e}"
         finally:
@@ -165,15 +272,27 @@ class App:
     def _trabajador_portadas(self) -> None:
         while True:
             j = self.cola_portadas.get()
+            if time.monotonic() - self.vistas.get(j.portada, 0) > 1.5:
+                # Ya no está en pantalla (se ha bajado por la lista): se pedirá otra vez si vuelve.
+                self.pedidas.discard(j.portada)
+                continue
             ruta = instalador.descargar_portada(self.ajustes, j, self.cache_portadas)
             try:
-                self.portadas_crudas[j.portada] = pygame.image.load(str(ruta)) if ruta else None
-            except (pygame.error, OSError):
+                img = pygame.image.load(str(ruta)) if ruta else None
+                if img and img.get_height() > PORTADA_MAX:
+                    w, h = img.get_size()
+                    img = pygame.transform.smoothscale(img, (max(1, w * PORTADA_MAX // h), PORTADA_MAX))
+                self.portadas_crudas[j.portada] = img
+                if img and not self.primera_portada:
+                    self.primera_portada = True
+                    _fase("primera carátula")
+            except (pygame.error, OSError, ValueError):
                 self.portadas_crudas[j.portada] = None
 
     def portada(self, j: catalogo.Juego, tamano: tuple[int, int]) -> pygame.Surface | None:
         if not j.portada:
             return None
+        self.vistas[j.portada] = time.monotonic()
         clave = f"{j.portada}|{tamano}"
         if clave in self.portadas:
             return self.portadas[clave]
@@ -225,9 +344,11 @@ class App:
             j.en_cola, j.progreso = False, 0.0
             self.cancelar_actual = False
             try:
-                instalador.instalar(self.ajustes, j,
-                                    lambda h, t: setattr(j, "progreso", h / t if t > 0 else 0.0),
-                                    lambda: self.cancelar_actual or self.salir)
+                def avance(h, t):
+                    j.preparando = False
+                    j.progreso = h / t if t > 0 else 0.0
+                instalador.instalar(self.ajustes, j, avance, lambda: self.cancelar_actual or self.salir,
+                                    preparando=lambda: setattr(j, "preparando", True))
                 j.instalado = True
                 guardados.sincronizar_juego(self.ajustes, j.sistema, j.fichero)
                 self.aviso(f"Instalado: {j.nombre_visible}", tema.ACENTO)
@@ -236,6 +357,7 @@ class App:
                 self.aviso(f"Error con {j.nombre_visible}: {e}", tema.ERROR, 8)
             finally:
                 j.progreso = -1.0
+                j.preparando = False
                 self._refiltrar()
 
     def _desinstalar(self, j: catalogo.Juego) -> None:
@@ -283,7 +405,7 @@ class App:
                     ("Buscar versiones nuevas de los ROMs", lambda: self._en_hilo(self._buscar_roms)),
                     ("Librería: " + LIBRERIAS[self.libreria_idx][1], self._cambiar_libreria),
                     ("Ajustes", self.abrir_ajustes),
-                    (f"Acerca de (versión {VERSION})", self._acerca_de),
+                    (f"Versión ({VERSION}) y licencias", self._version),
                     ("Salir", self._pedir_salir)]
         self.dialogos.append(Lista("Menú", [o[0] for o in opciones], lambda i: opciones[i][1]()))
 
@@ -365,16 +487,29 @@ class App:
         self.libreria_idx = i
         self.cargar()
 
-    def _acerca_de(self) -> None:
+    def _version(self) -> None:
+        """Apartado «Versión»: versión, aviso legal (normas de uso y
+        privacidad), licencia y licencias de terceros (ver legal.py)."""
         p = self.ajustes.plataforma
-        self.dialogos.append(Mensaje("RomsLibrary", (
-            f"Versión {VERSION} · {p.nombre} ({plataforma.arquitectura()})\n"
-            f"Servidor: {self.ajustes['url']}\n"
-            f"Consola: {self.ajustes.nombre_consola or '—'} ({self.ajustes.identificador or 'sin registrar'})\n"
-            f"ROMs: {self.ajustes['roms']}\n\n"
-            "Software libre (MIT). No incluye juegos: instala solo los que tengas derecho a usar. "
-            "Aviso legal: sund.es/romslibrary/aviso-legal. Nintendo, PlayStation, Xbox, Steam y los demás "
-            "nombres son marcas de sus dueños; proyecto independiente.")))
+        servidor = self.info_servidor.get("servicio")
+        detalle = (f"RomsLibrary {VERSION} · {plataforma.id_paquete()} · {p.nombre}\n"
+                   f"Servidor: {self.ajustes['url']}" + (f" (servicio {servidor})" if servidor else "") + "\n"
+                   f"Consola: {self.ajustes.nombre_consola or '—'} ({self.ajustes.identificador or 'sin registrar'})")
+        opciones = [("Términos de uso y privacidad (aviso legal)", lambda: self._en_hilo(self._ver_aviso_legal)),
+                    ("Licencia de RomsLibrary (MIT)", lambda: self.dialogos.append(
+                        TextoLargo("Licencia de RomsLibrary", legal.licencia())))]
+        terceros = legal.licencias_terceros()
+        if terceros:
+            opciones.append((f"Licencias de terceros ({len(terceros)})", lambda: self.dialogos.append(Lista(
+                "Licencias de terceros", [t for t, _ in terceros],
+                lambda i: self.dialogos.append(TextoLargo(terceros[i][0], terceros[i][1])), queda_abierta=True))))
+        opciones.append(("Volver", lambda: True))
+        self.dialogos.append(Lista("Versión", [o[0] for o in opciones], lambda i: opciones[i][1](), detalle=detalle,
+                                   queda_abierta=True))
+
+    def _ver_aviso_legal(self) -> None:
+        self.aviso("Descargando el aviso legal…")
+        self.dialogos.append(TextoLargo("Aviso legal y privacidad", legal.aviso_legal()))
 
     def abrir_ajustes(self) -> None:
         a = self.ajustes
@@ -409,8 +544,8 @@ class App:
         if url and not url.startswith(("https://", "http://")):
             url = "https://" + url
         self.ajustes["url"] = url
-        self._en_hilo(self._al_empezar)
-        self.cargar()
+        self.info_servidor = {}
+        self._en_hilo(self._conectar)
 
     def _solicitar_acceso(self) -> None:
         try:
@@ -439,6 +574,7 @@ class App:
 
     def _fijar_roms(self, ruta: str) -> None:
         self.ajustes["roms"] = ruta
+        self.ajustes["roms_elegida"] = True
         self.cargar()
 
     def _alternar_todas(self) -> None:
@@ -534,6 +670,7 @@ class App:
             for accion in self.entrada.repeticiones():
                 self.manejar(accion)
             self.dibujar()
+            self.guion.paso()
             pygame.display.flip()
             reloj.tick(30)
         self.cancelar_actual = True
@@ -560,12 +697,20 @@ class App:
                  ("Select", FILTROS[self.filtro_idx]), ("", LIBRERIAS[self.libreria_idx][1])]
         if self.busqueda:
             chips.append(("X", f"«{self.busqueda}»"))
-        x = titulo.right + px(24)
-        for boton, valor in chips:
-            r = tema.texto(sup, (boton + " " if boton else "") + valor, (x, px(16)), 20, tema.TEXTO)
-            x = r.right + px(26)
+        color = {"conectada": tema.ACENTO, "sin conexión": tema.AVISO}.get(self.conexion, tema.SUAVE)
+        conexion = ("● " if self.conexion == "conectada" else "○ ") + self.conexion
         estado = self.estado or f"{len(self.visibles)} juego(s)"
-        tema.texto(sup, estado, (w - px(16) - tema.fuente(18).size(estado)[0], px(18)), 18, tema.SUAVE)
+        derecha = w - px(16) - tema.fuente(18).size(conexion)[0]
+        x = titulo.right + px(20)
+        for boton, valor in chips:
+            texto = (boton + " " if boton else "") + valor
+            if x + tema.fuente(20).size(texto)[0] > derecha - px(12):
+                break                                   # pantalla estrecha: no cabe
+            r = tema.texto(sup, texto, (x, px(16)), 20, tema.TEXTO)
+            x = r.right + px(20)
+        tema.texto(sup, conexion, (derecha, px(8)), 18, color)
+        tema.texto(sup, estado, (w - px(16) - tema.fuente(16).size(estado)[0], px(30)), 16, tema.SUAVE,
+                   ancho_max=w // 2)
         # Lista
         arriba, abajo = px(56), h - px(44)
         alto = px(96)
@@ -596,9 +741,9 @@ class App:
         else:
             actual = self.visibles[self.sel] if self.visibles else None
             tema.ayuda(sup, [("A", "Desinstalar" if actual and actual.instalado else "Instalar" if not actual or actual.descargable
-                                   else "No disponible"), ("Y", "Idioma"),
-                             ("X", "Buscar"), ("L/R", "Consola"), ("Select", "Filtro"), ("Start", "Menú"),
-                             ("B", "Salir")])
+                                   else "No disponible"), ("Start", "Menú"),
+                             ("X", "Buscar"), ("L/R", "Consola"), ("Y", "Idioma"), ("Select", "Filtro"),
+                             ("B", "Salir")])     # en orden de importancia: en 640 px no caben todos
 
     def _fila(self, sup, j: catalogo.Juego, r: pygame.Rect, seleccionada: bool) -> None:
         px = tema.px
@@ -625,7 +770,9 @@ class App:
             partes.append("enlace del autor")
         tema.texto(sup, " · ".join(partes), (x, r.y + px(42)), 19, tema.SUAVE, ancho_max=ancho)
         y3 = r.y + px(66)
-        if j.progreso >= 0:
+        if getattr(j, "preparando", False):
+            tema.texto(sup, "Preparando en el servidor (descomprimiendo)…", (x, y3), 18, tema.AVISO, ancho_max=ancho)
+        elif j.progreso >= 0:
             tema.barra(sup, pygame.Rect(x, y3 + px(6), min(ancho, px(420)), px(10)), j.progreso)
             tema.texto(sup, f"{int(j.progreso * 100)}%", (x + min(ancho, px(420)) + px(10), y3), 18, tema.SUAVE)
         elif j.en_cola:
@@ -648,3 +795,39 @@ def main() -> None:
         import traceback
         (carpeta_datos() / "error.log").write_text(traceback.format_exc(), encoding="utf-8")
         raise
+
+
+class _Guion:
+    """Acciones guionizadas para probar sin mando (RL_GUION). Pasos separados
+    por «;»: una acción (abajo, aceptar, menu...), «esperar N», «tabla»
+    (espera a que llegue la tabla de juegos, como mucho 60 s), «captura
+    nombre» (PNG en RL_CAPTURAS) y «salir»."""
+
+    def __init__(self, app):
+        self.app = app
+        self.pasos = [p.strip() for p in os.environ.get("RL_GUION", "").split(";") if p.strip()]
+        self.hasta = 0.0
+        self.carpeta = Path(os.environ.get("RL_CAPTURAS") or ".")
+
+    def paso(self) -> None:
+        if not self.pasos or time.monotonic() < self.hasta:
+            return
+        orden, _, arg = self.pasos[0].partition(" ")
+        if orden == "tabla":
+            if (self.app.juegos or self.app.estado.startswith("Error")) and not self.app.cargando:
+                self.pasos.pop(0)
+            elif time.monotonic() - INICIO > 60:
+                self.pasos.pop(0)
+            return
+        self.pasos.pop(0)
+        if orden == "esperar":
+            self.hasta = time.monotonic() + float(arg or 1)
+        elif orden == "captura":
+            self.carpeta.mkdir(parents=True, exist_ok=True)
+            pygame.image.save(self.app.pantalla, str(self.carpeta / f"{arg or 'captura'}.png"))
+            print(f"[guion] captura {arg}", flush=True)
+        elif orden == "salir":
+            self.app.salir = True
+        else:
+            self.app.manejar(orden)
+            self.hasta = time.monotonic() + 0.3

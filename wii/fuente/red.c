@@ -303,6 +303,7 @@ int http_abrir(Conexion *c, const char *metodo, const char *url, const char *cla
             else if (!strcmp(linea, "connection") && (strstr(valor, "close") || strstr(valor, "Close")))
                 c->cerrar_al_final = 1;
             else if (!strcmp(linea, "location")) snprintf(r->ubicacion, sizeof r->ubicacion, "%s", valor);
+            else if (!strcmp(linea, "retry-after")) r->reintentar_en = atoi(valor);
             else if (!strcmp(linea, "content-range")) {
                 char *barra = strchr(valor, '/');
                 if (barra && barra[1] != '*') r->total = strtoll(barra + 1, NULL, 10);

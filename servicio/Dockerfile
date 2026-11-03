@@ -16,6 +16,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ .
+COPY VERSION ./VERSION
 
 USER romslibrary
 VOLUME /datos
@@ -24,6 +25,6 @@ EXPOSE 8765
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health')"
 
-# Sin log de accesos propio: lo lleva el proxy (y las URLs de la app llevan
-# credenciales en la query, que no deben quedar en ningún log).
+# Sin el log de accesos de uvicorn (las URLs pueden llevar credenciales en la
+# query): el servicio lleva el suyo, sin query ni cabeceras (main._LogAccesos).
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8765", "--proxy-headers", "--forwarded-allow-ips", "*", "--no-access-log"]

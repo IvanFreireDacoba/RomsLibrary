@@ -38,8 +38,12 @@ class Dialogo:
 
 
 class Lista(Dialogo):
-    def __init__(self, titulo: str, opciones: list[str], al_elegir, detalle: str = "", inicial: int = 0):
+    def __init__(self, titulo: str, opciones: list[str], al_elegir, detalle: str = "", inicial: int = 0,
+                 queda_abierta: bool = False):
+        """queda_abierta: elegir no la cierra (menús con submenús, como «Versión»),
+        salvo que al_elegir devuelva True; B la cierra siempre."""
         self.titulo, self.opciones, self.al_elegir, self.detalle = titulo, opciones, al_elegir, detalle
+        self.queda_abierta = queda_abierta
         self.sel = min(inicial, max(0, len(opciones) - 1))
 
     def manejar(self, accion):
@@ -48,8 +52,8 @@ class Lista(Dialogo):
         elif accion in ("pag_ant", "pag_sig"):
             self.sel = max(0, min(len(self.opciones) - 1, self.sel + (8 if accion == "pag_sig" else -8)))
         elif accion == "aceptar" and self.opciones:
-            self.al_elegir(self.sel)
-            return True
+            cerrar = self.al_elegir(self.sel)
+            return bool(cerrar) or not self.queda_abierta
         return accion == "atras"
 
     def dibujar(self, sup):
@@ -218,3 +222,48 @@ def _raiz_inicial() -> Path:
         if os.path.isdir(p):
             return Path(p)
     return Path(string.ascii_uppercase[2] + ":/") if os.name == "nt" else Path("/")
+
+
+class TextoLargo(Dialogo):
+    """Texto largo (aviso legal, licencias) a pantalla casi completa: arriba /
+    abajo línea a línea, izquierda / derecha o L / R de página en página,
+    A o B para cerrar."""
+
+    def __init__(self, titulo: str, texto: str):
+        self.titulo, self.texto = titulo, texto
+        self.linea = 0
+        self._lineas: list[str] = []
+        self._ancho = 0
+        self._por_pagina = 1
+
+    def manejar(self, accion):
+        paso = {"arriba": -1, "abajo": 1, "izquierda": -self._por_pagina, "derecha": self._por_pagina,
+                "pag_ant": -self._por_pagina, "pag_sig": self._por_pagina}.get(accion)
+        if paso:
+            self.linea = max(0, min(max(0, len(self._lineas) - self._por_pagina), self.linea + paso))
+            return False
+        return accion in ("atras", "aceptar")
+
+    def dibujar(self, sup):
+        r = self._marco(sup, 0.94, 0.84)
+        f = tema.fuente(19)
+        ancho = r.w - tema.px(48)
+        if ancho != self._ancho:
+            self._ancho = ancho
+            self._lineas = _partir(self.texto, f, ancho)
+        y0 = r.y + tema.px(56)
+        alto = f.get_linesize()
+        self._por_pagina = max(1, (r.bottom - y0 - tema.px(30)) // alto)
+        for i, linea in enumerate(self._lineas[self.linea:self.linea + self._por_pagina]):
+            tema.texto(sup, linea, (r.x + tema.px(22), y0 + i * alto), 19)
+        total = len(self._lineas)
+        if total > self._por_pagina:
+            # Barra de posición a la derecha.
+            barra = pygame.Rect(r.right - tema.px(14), y0, tema.px(5), r.bottom - y0 - tema.px(30))
+            pygame.draw.rect(sup, tema.FONDO, barra, border_radius=tema.px(3))
+            h = max(tema.px(16), barra.h * self._por_pagina // total)
+            pos = barra.y + (barra.h - h) * self.linea // max(1, total - self._por_pagina)
+            pygame.draw.rect(sup, tema.ACENTO, (barra.x, pos, barra.w, h), border_radius=tema.px(3))
+            pagina = f"{min(total, self.linea + self._por_pagina)}/{total}"
+            tema.texto(sup, pagina, (r.right - tema.px(22) - tema.fuente(16).size(pagina)[0], r.bottom - tema.px(26)),
+                       16, tema.SUAVE)

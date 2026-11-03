@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Botón «Buscar»: fondo verde. Con el foco del mando, verde fósforo
+     brillante con borde claro (como la fila seleccionada) para que se vea. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#7bffb0" />
+            <stroke android:width="2dp" android:color="#ffffff" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#1f7a45" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#2e9e5b" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+</selector>

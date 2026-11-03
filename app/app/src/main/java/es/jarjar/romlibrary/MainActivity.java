@@ -14,6 +14,7 @@ import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.view.inputmethod.InputMethodManager;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.Menu;
@@ -26,6 +27,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.GridView;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.Spinner;
@@ -88,8 +90,15 @@ public class MainActivity extends BaseActivity {
     private static final String[] LIBRERIAS = {"personal", "todas", "otras"};
     private Spinner spinnerFiltroLibreria;
     private EditText campoFiltroNombre;
-    private Button botonAlternarVista;
+    private Button botonBuscar;
+    private ImageButton botonAlternarVista;
     private boolean vistaCuadricula = false;
+    // Orden de la lista (local, sobre lo ya cargado). Alfabético por defecto.
+    private static final int ORDEN_ALFABETICO = 0, ORDEN_MAS_PESADOS = 1, ORDEN_MENOS_PESADOS = 2,
+            ORDEN_MAS_NUEVOS = 3, ORDEN_MAS_VIEJOS = 4;
+    private Spinner spinnerOrden;
+    // Tras pulsar «Buscar», el foco va a los resultados en cuanto lleguen.
+    private boolean enfocarResultadosAlCargar = false;
 
     private List<Juego> juegos = new ArrayList<>();
     private JuegoAdapter adapter;
@@ -187,7 +196,13 @@ public class MainActivity extends BaseActivity {
         adapterLibreria.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerFiltroLibreria.setAdapter(adapterLibreria);
         campoFiltroNombre = findViewById(R.id.campoFiltroNombre);
+        botonBuscar = findViewById(R.id.botonBuscar);
         botonAlternarVista = findViewById(R.id.botonAlternarVista);
+        spinnerOrden = findViewById(R.id.spinnerOrden);
+        ArrayAdapter<String> adapterOrden = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item,
+                new String[]{"Alfabético", "Más pesados", "Menos pesados", "Más nuevos", "Más viejos"});
+        adapterOrden.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinnerOrden.setAdapter(adapterOrden);
 
         ArrayAdapter<String> adapterFiltroInstalado = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item,
                 new String[]{"Todos", "Instalados", "No instalados"});
@@ -254,7 +269,27 @@ public class MainActivity extends BaseActivity {
             }
         });
         campoFiltroNombre.setOnKeyListener(bajarALaListaConDpad);
+        botonBuscar.setOnKeyListener(bajarALaListaConDpad);
         botonAlternarVista.setOnKeyListener(bajarALaListaConDpad);
+        spinnerOrden.setOnKeyListener(bajarALaListaConDpad);
+        botonBuscar.setOnClickListener(v -> buscarYEnfocarResultados());
+        spinnerOrden.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            private boolean primeraVez = true;
+
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (primeraVez) {
+                    primeraVez = false; // la selección inicial la dispara el propio Spinner al montarse
+                    return;
+                }
+                // Orden local: no hace falta volver a pedir la lista al servidor.
+                aplicarFiltrosYActualizarAdaptadores();
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
 
         spinnerFiltroInstalado.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
@@ -308,8 +343,7 @@ public class MainActivity extends BaseActivity {
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
                     || actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE
                     || esEnter) {
-                manejadorBusqueda.removeCallbacks(busquedaDebounced);
-                cargarJuegos();
+                buscarYEnfocarResultados();
                 return true;
             }
             return false;
@@ -319,9 +353,13 @@ public class MainActivity extends BaseActivity {
         AppUpdater.comprobar(this, baseUrl, token);
         // Aviso diario en segundo plano si hay juegos descargados con versión nueva.
         ComprobadorActualizaciones.programar(getApplicationContext());
-        comprobarConectividadYAvisarSiHaceFalta();
-        cargarSistemasDisponibles();
-        actualizarEstadoInicial();
+        ImageLoader.iniciar(getApplicationContext());
+        // Arranque en 3 fases que no se bloquean entre sí: 1) «hola» ligero
+        // (marca la consola como conectada), 2) la tabla de juegos y 3) las
+        // carátulas poco a poco (ImageLoader). La comprobación de update
+        // (arriba) va aparte, con sus propios reintentos.
+        actualizarEstadoInicial(false);
+        conectarYCargar();
         comprobarPermisoAlmacenamientoCompleto();
         actualizarSubtitulo();
         if (!Partidas.registrada(this)) {
@@ -345,9 +383,11 @@ public class MainActivity extends BaseActivity {
     /** Nombre e identificador de esta consola siempre visibles bajo el título. */
     private void actualizarSubtitulo() {
         if (getActionBar() != null) {
-            getActionBar().setSubtitle(Partidas.registrada(this)
+            String conexion = sinServidor() ? "" : " · " + (estadoConexion == null ? "conectando..."
+                    : "conectada".equals(estadoConexion) ? "\u25CF conectada" : "\u25CB sin conexión");
+            getActionBar().setSubtitle((Partidas.registrada(this)
                     ? Partidas.nombre(this) + " · " + Partidas.identificador(this)
-                    : "Consola sin configurar");
+                    : "Consola sin configurar") + conexion);
         }
     }
 
@@ -479,8 +519,7 @@ public class MainActivity extends BaseActivity {
                                     ? "Consola " + Partidas.nombre(this) + " · " + Partidas.identificador(this)
                                     : "Conectado a la librería. Los guardados en la nube no están disponibles ahora mismo.",
                             Toast.LENGTH_LONG).show();
-                    cargarSistemasDisponibles();
-                    cargarJuegos();
+                    conectarYCargar();
                 });
             }).start();
         });
@@ -840,6 +879,11 @@ public class MainActivity extends BaseActivity {
     }
 
     private void actualizarEstadoInicial() {
+        actualizarEstadoInicial(true);
+    }
+
+    /** cargar=false al arrancar: la tabla la pide conectarYCargar() tras la fase 1. */
+    private void actualizarEstadoInicial(boolean cargar) {
         Uri carpeta = CarpetaRomsUtil.obtenerUriValido(this, prefs);
         if (carpeta == null) {
             grupoElegirCarpeta.setVisibility(View.VISIBLE);
@@ -847,12 +891,35 @@ public class MainActivity extends BaseActivity {
         } else {
             grupoElegirCarpeta.setVisibility(View.GONE);
             grupoBiblioteca.setVisibility(View.VISIBLE);
-            cargarJuegos();
+            if (cargar) {
+                cargarJuegos();
+            }
         }
     }
 
+    /**
+     * Botón «Buscar» (y la tecla Buscar/Intro del teclado): busca ya con lo
+     * escrito (sin esperar al debounce de escribir), cierra el teclado y,
+     * cuando llegan los resultados, les pasa el foco del mando.
+     */
+    private void buscarYEnfocarResultados() {
+        manejadorBusqueda.removeCallbacks(busquedaDebounced);
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.hideSoftInputFromWindow(campoFiltroNombre.getWindowToken(), 0);
+        }
+        if (campoFiltroNombre.hasFocus()) {
+            campoFiltroNombre.clearFocus();
+        }
+        enfocarResultadosAlCargar = true;
+        cargarJuegos();
+    }
+
     private void aplicarVistaSeleccionada() {
-        botonAlternarVista.setText(vistaCuadricula ? "Lista" : "Cuadrícula");
+        botonAlternarVista.setImageResource(vistaCuadricula ? R.drawable.ic_vista_cuadricula : R.drawable.ic_vista_lista);
+        botonAlternarVista.setContentDescription(vistaCuadricula
+                ? "Vista en cuadrícula: pulsa para cambiar a lista"
+                : "Vista en lista: pulsa para cambiar a cuadrícula");
         listaJuegos.setVisibility(vistaCuadricula ? View.GONE : View.VISIBLE);
         cuadriculaJuegos.setVisibility(vistaCuadricula ? View.VISIBLE : View.GONE);
     }
@@ -891,7 +958,10 @@ public class MainActivity extends BaseActivity {
             lanzarSelectorCarpeta();
             return true;
         } else if (id == R.id.menuRefrescar) {
-            cargarJuegos();
+            conectarYCargar();
+            return true;
+        } else if (id == R.id.menuVersion) {
+            startActivity(new Intent(this, VersionActivity.class));
             return true;
         } else if (id == R.id.menuReiniciarEsDe) {
             reiniciarEsDeManual();
@@ -1069,20 +1139,69 @@ public class MainActivity extends BaseActivity {
         return baseUrl == null || baseUrl.isEmpty();
     }
 
-    private void comprobarConectividadYAvisarSiHaceFalta() {
+    /** null: conectando; si no, el resultado de la última fase 1 («conectada» / «sin conexión»). */
+    private String estadoConexion;
+    private static long inicioArranque;
+    private boolean tablaMedida;
+
+    /**
+     * Fase 1: «hola», una petición ligera que el servidor contesta al instante
+     * (sin tocar disco pesado ni Switch). Con su respuesta la consola ya se
+     * marca como CONECTADA; después se pide la tabla (fase 2). Una librería
+     * anterior a «hola» contesta con un error HTTP (404/401): también vale,
+     * el servidor está ahí. Solo un fallo de red cuenta como sin conexión.
+     */
+    private void conectarYCargar() {
         if (sinServidor()) {
+            actualizarEstadoInicial(true);
             return;
         }
+        if (inicioArranque == 0) {
+            inicioArranque = SystemClock.elapsedRealtime();
+        }
+        long t0 = SystemClock.elapsedRealtime();
+        estadoConexion = null;
+        actualizarSubtitulo();
+        if (grupoBiblioteca.getVisibility() == View.VISIBLE) {
+            textoEstado.setText("Conectando...");
+        }
+        String base = baseUrl, clave = token;
         new Thread(() -> {
-            try {
-                ApiClient.getTexto(baseUrl, token, RUTA_API + "?accion=version", 5000);
-            } catch (Exception e) {
-                android.util.Log.e("RomLibrary", "Fallo al contactar con " + baseUrl, e);
-                String detalle = e.getClass().getSimpleName() + (e.getMessage() != null ? ": " + e.getMessage() : "");
-                runOnUiThread(() -> Toast.makeText(this,
-                        "No se pudo contactar con el servidor (" + detalle + ")", Toast.LENGTH_LONG).show());
+            Exception fallo = null;
+            for (int intento = 0; intento < 3; intento++) {
+                try {
+                    new JSONObject(ApiClient.getTexto(base, clave, RUTA_API + "?accion=hola", 8000));
+                    fallo = null;
+                    break;
+                } catch (ApiClient.ErrorHttp e) {
+                    fallo = null;       // el servidor contesta (librería sin «hola»)
+                    break;
+                } catch (Exception e) {
+                    fallo = e;
+                    android.util.Log.w("RomLibrary", "Fase 1 (conexión) fallida, intento " + (intento + 1), e);
+                    SystemClock.sleep(2000L * (intento + 1));
+                }
             }
-        }).start();
+            android.util.Log.i("RomLibrary", "arranque fase 1 (conexión): " + (SystemClock.elapsedRealtime() - t0)
+                    + " ms, " + (fallo == null ? "conectada" : "sin conexión"));
+            Exception error = fallo;
+            runOnUiThread(() -> {
+                if (isFinishing() || !base.equals(baseUrl)) {
+                    return;
+                }
+                estadoConexion = error == null ? "conectada" : "sin conexión";
+                actualizarSubtitulo();
+                if (error != null) {
+                    String detalle = error.getClass().getSimpleName() + (error.getMessage() != null ? ": " + error.getMessage() : "");
+                    Toast.makeText(this, "No se pudo contactar con el servidor (" + detalle + ")", Toast.LENGTH_LONG).show();
+                }
+                // Fase 2 (también sin conexión: así el error y «Refrescar» quedan a la vista).
+                cargarSistemasDisponibles();
+                if (grupoBiblioteca.getVisibility() == View.VISIBLE) {
+                    cargarJuegos();
+                }
+            });
+        }, "conexion").start();
     }
 
     // ---------- Carga de sistemas y galería ----------
@@ -1139,12 +1258,28 @@ public class MainActivity extends BaseActivity {
         textoEstado.setText("Cargando...");
         new Thread(() -> {
             try {
-                List<Juego> todas = parsearJuegos(ApiClient.getTexto(baseUrl, token, ruta));
+                // 30 s: la tabla solo son metadatos (el servidor no espera a nada), pero por
+                // una red lenta puede tardar más que la petición ligera de la fase 1.
+                long t0 = SystemClock.elapsedRealtime();
+                String json = ApiClient.getTexto(baseUrl, token, ruta, 30000);
+                long msRed = SystemClock.elapsedRealtime() - t0;
+                List<Juego> todas = parsearJuegos(json);
+                long msParseo = SystemClock.elapsedRealtime() - t0 - msRed;
                 marcarInstaladosLocalmente(todas);
+                long msInstalados = SystemClock.elapsedRealtime() - t0 - msRed - msParseo;
                 List<Juego> lista = agruparIdiomas(todas);
                 runOnUiThread(() -> {
                     juegos = lista;
                     aplicarFiltrosYActualizarAdaptadores();
+                    if (!tablaMedida && inicioArranque > 0) {
+                        tablaMedida = true;
+                        ImageLoader.marcarInicio(inicioArranque);
+                        android.util.Log.i("RomLibrary", "arranque fase 2 (tabla): " + msRed + " ms la petición, "
+                                + msParseo + " ms leerla, " + msInstalados + " ms ver los instalados, "
+                                + (SystemClock.elapsedRealtime() - t0) + " ms hasta pintarla, "
+                                + (SystemClock.elapsedRealtime() - inicioArranque)
+                                + " ms desde el arranque, " + lista.size() + " juegos");
+                    }
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> textoEstado.setText("Error: " + e.getMessage()));
@@ -1174,8 +1309,10 @@ public class MainActivity extends BaseActivity {
 
     /** Reconstruye los adaptadores a partir de `juegos` + el filtro de instalado actual. */
     private void aplicarFiltrosYActualizarAdaptadores() {
-        List<Juego> visibles = aplicarFiltroInstalado(juegos);
-        textoEstado.setText(visibles.isEmpty() ? "Sin juegos" : visibles.size() + " juego(s)");
+        List<Juego> visibles = new ArrayList<>(aplicarFiltroInstalado(juegos));
+        boolean sinFechas = ordenar(visibles, spinnerOrden.getSelectedItemPosition());
+        textoEstado.setText(visibles.isEmpty() ? "Sin juegos" : visibles.size() + " juego(s)"
+                + (sinFechas ? " · esta librería no indica fechas: orden alfabético" : ""));
         adapter = new JuegoAdapter(this, visibles, baseUrl, token, accionesJuego);
         adapterGrid = new JuegoGridAdapter(this, visibles, baseUrl, token, accionesJuego);
         listaJuegos.setAdapter(adapter);
@@ -1189,12 +1326,70 @@ public class MainActivity extends BaseActivity {
         // PERO no si quien tiene el foco ahora mismo es el propio buscador
         // -- si no, cada refresco (incluido el debounced tras escribir)
         // le robaría el foco al EditText y cerraría el teclado de golpe.
+        boolean irAResultados = enfocarResultadosAlCargar;
+        enfocarResultadosAlCargar = false;
         (vistaCuadricula ? cuadriculaJuegos : listaJuegos).post(() -> {
-            if (getCurrentFocus() != campoFiltroNombre) {
+            if (irAResultados || getCurrentFocus() != campoFiltroNombre) {
                 enfocarPrimeraFilaOCelda();
             }
         });
     }
+
+    /**
+     * Ordena `lista` según el filtro «Orden». Siempre con el alfabético (por
+     * el nombre que se ve, sin distinguir mayúsculas ni tildes) como
+     * desempate. Los juegos sin fecha van al final en los órdenes por fecha.
+     * Devuelve true si se pidió un orden por fecha y ningún juego la trae
+     * (servicio antiguo): entonces queda en alfabético.
+     */
+    private static boolean ordenar(List<Juego> lista, int orden) {
+        java.text.Collator collator = java.text.Collator.getInstance(new java.util.Locale("es", "ES"));
+        collator.setStrength(java.text.Collator.PRIMARY);
+        java.util.Comparator<Juego> alfabetico = (a, b) -> {
+            int c = collator.compare(a.nombreMostrado(), b.nombreMostrado());
+            return c != 0 ? c : a.sistema.compareTo(b.sistema);
+        };
+        boolean porFecha = orden == ORDEN_MAS_NUEVOS || orden == ORDEN_MAS_VIEJOS;
+        boolean hayFechas = false;
+        for (Juego j : lista) {
+            if (j.fecha > 0) {
+                hayFechas = true;
+                break;
+            }
+        }
+        java.util.Comparator<Juego> criterio;
+        switch (orden) {
+            case ORDEN_MAS_PESADOS:
+                criterio = (a, b) -> Long.compare(b.tamanoBytes, a.tamanoBytes);
+                break;
+            case ORDEN_MENOS_PESADOS:
+                criterio = (a, b) -> Long.compare(a.tamanoBytes, b.tamanoBytes);
+                break;
+            case ORDEN_MAS_NUEVOS:
+            case ORDEN_MAS_VIEJOS:
+                if (!hayFechas) {
+                    criterio = (a, b) -> 0;
+                    break;
+                }
+                boolean nuevos = orden == ORDEN_MAS_NUEVOS;
+                criterio = (a, b) -> {
+                    boolean ca = a.fecha > 0, cb = b.fecha > 0;
+                    if (ca != cb) {
+                        return ca ? -1 : 1; // sin fecha, al final
+                    }
+                    return nuevos ? Double.compare(b.fecha, a.fecha) : Double.compare(a.fecha, b.fecha);
+                };
+                break;
+            default:
+                criterio = (a, b) -> 0;
+        }
+        lista.sort(criterio.thenComparing(alfabetico));
+        return porFecha && !hayFechas && !lista.isEmpty();
+    }
+
+    // Precompiladas: String.matches() compila la expresión en cada juego.
+    private static final java.util.regex.Pattern HEX64 = java.util.regex.Pattern.compile("[0-9a-f]{64}");
+    private static final java.util.regex.Pattern IDIOMA = java.util.regex.Pattern.compile("[a-z]{2}");
 
     private static List<Juego> parsearJuegos(String json) throws Exception {
         JSONArray arr = new JSONArray(json);
@@ -1231,19 +1426,22 @@ public class MainActivity extends BaseActivity {
             }
             juego.libreria = o.optString("libreria", "");
             String sha = o.optString("sha", "");
-            juego.sha = sha.matches("[0-9a-f]{64}") ? sha : null;
+            juego.sha = HEX64.matcher(sha).matches() ? sha : null;
             String externa = o.isNull("fuenteExterna") ? "" : o.optString("fuenteExterna", "");
             juego.fuenteExterna = externa.startsWith("https://") && !externa.contains("@") && juego.sha != null ? externa : null;
             String shaEnlace = o.optString("shaEnlace", "");
-            juego.shaEnlace = shaEnlace.matches("[0-9a-f]{64}") ? shaEnlace : juego.sha;
+            juego.shaEnlace = HEX64.matcher(shaEnlace).matches() ? shaEnlace : juego.sha;
             juego.confianza = o.optInt("confianza", 0);
+            // Opcional (servicios antiguos no lo mandan): sin él, orden alfabético.
+            double fecha = o.isNull("fecha") ? 0 : o.optDouble("fecha", 0);
+            juego.fecha = Double.isNaN(fecha) || fecha < 0 ? 0 : fecha;
             juego.titulo = o.isNull("titulo") ? null : o.optString("titulo", null);
             juego.version = o.optInt("version", 0);
             juego.etiqueta = o.isNull("etiqueta") ? null : o.optString("etiqueta", null);
             JSONArray idiomas = o.optJSONArray("idiomas");
             for (int k = 0; idiomas != null && k < idiomas.length(); k++) {
                 String idioma = idiomas.optString(k, "");
-                if (idioma.matches("[a-z]{2}")) {
+                if (IDIOMA.matcher(idioma).matches()) {
                     juego.idiomas.add(idioma);
                 }
             }
@@ -1274,11 +1472,20 @@ public class MainActivity extends BaseActivity {
         super.onResume();
         cuenta = Cuenta.cargar(this); // por si se renombró en "Sincronizar consolas"
         actualizarSubtitulo();
-        sincronizarGuardadosEnSegundoPlano();
+        // Si al arrancar no se pudo mirar si hay versión nueva, se vuelve a mirar aquí
+        // (como mucho cada 30 min; ver AppUpdater).
+        AppUpdater.comprobar(this, baseUrl, token);
         comprobarSolicitudesPendientes();
         comprobarAccesoLibreria();
         completarIconosEsDeEnSegundoPlano();
-        actualizarRomsEnSegundoPlano();
+        // Lo pesado de fondo (guardados: catálogo completo; versiones de ROMs) no
+        // compite con las fases 1 y 2 del arranque: unos segundos después.
+        listaJuegos.postDelayed(() -> {
+            if (!isFinishing()) {
+                sincronizarGuardadosEnSegundoPlano();
+                actualizarRomsEnSegundoPlano();
+            }
+        }, inicioArranque > 0 && SystemClock.elapsedRealtime() - inicioArranque < 10_000 ? 5_000 : 0);
     }
 
     private static final long INTERVALO_MIN_ACTUALIZAR_ROMS_MS = 10 * 60 * 1000;
@@ -1359,8 +1566,10 @@ public class MainActivity extends BaseActivity {
 
     private void marcarInstaladosLocalmente(List<Juego> lista) {
         Uri arbolUri = CarpetaRomsUtil.obtenerUriValido(this, prefs);
-        DocumentFile raiz = arbolUri != null ? DocumentFile.fromTreeUri(this, arbolUri) : null;
-        Map<String, DocumentFile> carpetasPorSistema = new HashMap<>();
+        // Una consulta por carpeta (ver CarpetaRomsUtil.hijos), nunca una por juego.
+        Map<String, CarpetaRomsUtil.Hijo> hijosRaiz = arbolUri != null
+                ? CarpetaRomsUtil.hijos(this, arbolUri, null) : new HashMap<>();
+        Map<String, Map<String, CarpetaRomsUtil.Hijo>> carpetasPorSistema = new HashMap<>();
         for (Juego juego : lista) {
             if ("rpgmaker".equals(juego.sistema)) {
                 // Siempre en almacenamiento interno, independiente de que
@@ -1368,16 +1577,20 @@ public class MainActivity extends BaseActivity {
                 juego.instaladoLocal = carpetaRpgmakerInterno(juego.nombreFichero).isDirectory();
                 continue;
             }
-            if (raiz == null) {
+            if (arbolUri == null) {
                 continue;
             }
-            DocumentFile carpetaSistema = carpetasPorSistema.computeIfAbsent(juego.sistema, raiz::findFile);
-            DocumentFile local = carpetaSistema != null ? carpetaSistema.findFile(juego.nombreFichero) : null;
+            Map<String, CarpetaRomsUtil.Hijo> hijos = carpetasPorSistema.computeIfAbsent(juego.sistema, sistema -> {
+                CarpetaRomsUtil.Hijo carpeta = hijosRaiz.get(sistema);
+                return carpeta != null && carpeta.carpeta
+                        ? CarpetaRomsUtil.hijos(this, arbolUri, carpeta.id) : new HashMap<>();
+            });
+            CarpetaRomsUtil.Hijo local = hijos.get(juego.nombreFichero);
             // Un fichero de 0 bytes es una descarga que falló a medias (pasó
             // de verdad): cuenta como NO instalado, para que el
             // botón ofrezca volver a descargarlo (descargar() ya borra el
             // existente antes de crear el nuevo).
-            juego.instaladoLocal = local != null && (local.isDirectory() || local.length() > 0);
+            juego.instaladoLocal = local != null && (local.carpeta || local.tamano > 0);
         }
     }
 
@@ -1764,6 +1977,14 @@ public class MainActivity extends BaseActivity {
                 juego.bytesDescargados = descargado;
                 juego.bytesTotal = total;
                 runOnUiThread(() -> pintarProgresoVisible(juego));
+            }
+
+            @Override
+            public void onPreparando() {
+                DescargaService.actualizar(getApplicationContext(),
+                        juego.nombreFichero + " · preparando en el servidor…", -1);
+                runOnUiThread(() -> textoEstado.setText("Preparando " + juego.nombreFichero
+                        + " en el servidor (descomprimiendo)… la descarga empieza sola."));
             }
         };
     }

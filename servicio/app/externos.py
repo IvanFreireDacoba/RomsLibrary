@@ -125,7 +125,8 @@ def _guardar(juego_id: str, url: str, pagina: str, tamano: int, cab: dict, sha_e
                     (juego_id, url, pagina, cab.get("etag"), cab.get("modificado"), tamano, time.time(), sha_enlace))
 
 
-async def guardar_enlace(sistema: str, nombre: str, url: str, pagina: str, usuario: str, sin_cabecera_ok: bool) -> dict:
+async def guardar_enlace(sistema: str, nombre: str, url: str, pagina: str, usuario: str, sin_cabecera_ok: bool,
+                         codigo_distinto_ok: bool = False) -> dict:
     """Enlace para un juego que ya está en la librería (ver cabecera del módulo)."""
     url = _validar_url(url, "Enlace")
     pagina = _validar_url(pagina, "Página del autor") if pagina.strip() else ""
@@ -140,7 +141,7 @@ async def guardar_enlace(sistema: str, nombre: str, url: str, pagina: str, usuar
             resultado = {"ok": True, "version": actual["n"], "nueva": False}
         else:
             r = await versiones.aplicar(ruta.parent.name, ruta.name, temporal, sha, tamano,
-                                        f"{usuario} (enlace externo)", sin_cabecera_ok)
+                                        f"{usuario} (enlace externo)", sin_cabecera_ok, codigo_distinto_ok)
             resultado = {"ok": True, "version": r["version"], "nueva": True}
         _guardar(juego["id"], url, pagina, tam_enlace, cab)   # tamaño del ENLACE (lo que sirve la web), para detectar cambios
         return resultado

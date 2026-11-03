@@ -36,6 +36,7 @@ _ALIAS_MUOS = {
     "gc": ["gc", "gamecube", "Nintendo GameCube"],
     "ps2": ["ps2", "Sony PlayStation 2"],
     "switch": ["switch", "Nintendo Switch"],
+    "nds": ["nds", "Nintendo DS", "NDS"],
 }
 
 # Núcleo de RetroArch con el que se nombran en el servidor las partidas de
@@ -75,7 +76,8 @@ def _leer(ruta: str) -> str:
 
 def detectar() -> Plataforma:
     casa = Path.home()
-    ligeras = ["gb", "gbc", "gba", "n64", "psx", "psp"]          # lo que mueve cualquier portátil ARM
+    # Lo que mueve cualquier portátil ARM (también una Anbernic H700: RG35XX, RG34XX).
+    ligeras = ["gb", "gbc", "gba", "nds", "n64", "psx", "psp"]
     pc = [s for s in SISTEMAS if s != "rpgmaker"]
     if sys.platform == "win32":
         return Plataforma("windows", "Windows", str(casa / "ROMs"), SISTEMAS[:],
@@ -90,9 +92,12 @@ def detectar() -> Plataforma:
             else "Batocera"
         return Plataforma("batocera", nombre, "/userdata/roms", ligeras if _arquitectura() == "aarch64" else pc,
                           carpetas=dict(_CARPETAS_BATOCERA), partidas="por_sistema", carpeta_partidas="/userdata/saves")
-    if os.path.isdir("/opt/muos") or os.path.isdir("/mnt/mmc/MUOS"):
+    # muOS / MustardOS (mismo sistema con su nombre nuevo).
+    if os.path.isdir("/opt/muos") or os.path.isdir("/mnt/mmc/MUOS") or os.path.isdir("/run/muos"):
         roms = "/mnt/sdcard/ROMS" if os.path.isdir("/mnt/sdcard/ROMS") else "/mnt/mmc/ROMS"
-        return Plataforma("muos", "muOS", roms, ligeras,
+        nombre = "MustardOS" if "mustard" in (_leer("/opt/muos/config/version.txt") + _leer("/etc/os-release")).lower() \
+            else "muOS"
+        return Plataforma("muos", nombre, roms, ligeras,
                           retroarch_cfg=["/mnt/mmc/MUOS/retroarch/retroarch.cfg", "/run/muos/storage/info/config/retroarch.cfg"],
                           alias=_ALIAS_MUOS)
     if os.path.isdir("/storage/roms"):
@@ -117,6 +122,12 @@ def detectar() -> Plataforma:
     nombre = "Steam Deck" if "valve" in _leer("/sys/devices/virtual/dmi/id/board_vendor").lower() else "Linux"
     return Plataforma("linux", nombre, str(casa / "ROMs"), pc if _arquitectura() == "x86_64" else ligeras,
                       retroarch_cfg=cfgs)
+
+
+def reconocida(p: Plataforma) -> bool:
+    """¿Se sabe dónde van los ROMs? En un Linux ARM desconocido (otro
+    firmware de consola) se pregunta la carpeta al arrancar."""
+    return not (p.id == "linux" and _arquitectura() == "aarch64" and not Path(p.roms).is_dir())
 
 
 def carpeta_existente(raiz: Path, alias: list[str]) -> str | None:

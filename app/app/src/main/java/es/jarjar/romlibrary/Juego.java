@@ -48,6 +48,9 @@ final class Juego {
     boolean descargable = true;
     String motivoCorrupto;
     int confianza;         // de la librería de origen, según el índice (70+ = de confianza)
+    // Lo más reciente entre la subida y el último update (epoch en segundos),
+    // para el orden «Más nuevos/Más viejos». 0 = la librería no lo manda.
+    double fecha;
     boolean instaladoLocal;
     boolean descargando; // estado de UI puro (no viene del servidor): sustituye el botón por una barra de progreso.
     boolean enCola; // esperando su turno en la cola de descargas (ver MainActivity.solicitarDescarga).

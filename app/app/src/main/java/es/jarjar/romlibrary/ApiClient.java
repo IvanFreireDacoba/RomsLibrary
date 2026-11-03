@@ -82,6 +82,10 @@ public final class ApiClient {
     /** Callback de progreso de descarga; total puede ser -1 si el servidor no manda Content-Length. */
     public interface ProgresoDescarga {
         void onProgreso(long descargado, long total);
+
+        /** El servidor está preparando el fichero (503 + Retry-After: p. ej. descomprimiendo un juego de Switch). */
+        default void onPreparando() {
+        }
     }
 
     /** Descarga un fichero por streaming directo a un OutputStream ya abierto (no lo cierra). */
@@ -160,6 +164,8 @@ public final class ApiClient {
     }
 
     private static final int MAX_INTENTOS_DESCARGA = 8;
+    /** Cuánto se espera como mucho a que el servidor prepare un fichero (503 + Retry-After). */
+    private static final long MAX_ESPERA_PREPARANDO_MS = 30 * 60 * 1000L;
 
     /**
      * Descarga de ROMs a prueba de cortes: si la conexión se cae (wifi que
@@ -176,8 +182,18 @@ public final class ApiClient {
         long descargado = 0;
         long total = -1;
         IOException ultimoError = null;
+        long finEsperaPreparando = System.currentTimeMillis() + MAX_ESPERA_PREPARANDO_MS;
+        long esperaPreparando = 0;
         for (int intento = 1; intento <= MAX_INTENTOS_DESCARGA; intento++) {
-            if (intento > 1) {
+            if (esperaPreparando > 0) {
+                try {
+                    Thread.sleep(esperaPreparando);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Descarga interrumpida", ie);
+                }
+                esperaPreparando = 0;
+            } else if (intento > 1) {
                 try {
                     Thread.sleep(Math.min(30000L, 2000L << (intento - 2)));
                 } catch (InterruptedException ie) {
@@ -206,6 +222,22 @@ public final class ApiClient {
                     continuar = false;
                     descargado = 0;
                     total = con.getContentLengthLong();
+                } else if (codigo == 503 && con.getHeaderField("Retry-After") != null
+                        && System.currentTimeMillis() < finEsperaPreparando) {
+                    // El servidor lo está preparando (Switch guardado comprimido: lo
+                    // descomprime antes de servirlo). No es un fallo: no gasta intento.
+                    if (progreso != null) {
+                        progreso.onPreparando();
+                    }
+                    long segundos = 15;
+                    try {
+                        segundos = Long.parseLong(con.getHeaderField("Retry-After").trim());
+                    } catch (NumberFormatException ignored) {
+                        // fecha HTTP en vez de segundos: 15 s
+                    }
+                    esperaPreparando = Math.max(2, Math.min(60, segundos)) * 1000L;
+                    intento--;
+                    continue;
                 } else if (codigo == 416 && total > 0 && descargado == total) {
                     return; // ya estaba completo: el corte fue justo al final.
                 } else if (codigo >= 400 && codigo < 500 && codigo != 408 && codigo != 429) {

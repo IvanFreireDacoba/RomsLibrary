@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+pruebas/
+# Claves de Switch: NUNCA en la imagen (se montan con /datos, ver comprimidos.py).
+*.keys
+keys/

@@ -193,16 +193,19 @@ def historial(sistema: str, nombre: str) -> dict | None:
 
 def cadenas_propias() -> dict[str, dict]:
     """ruta -> {"codigo", "etiqueta" (la de la versión actual), "cadena": [(sha, tamano), ...]
-    de la más vieja a la actual}."""
+    de la más vieja a la actual, "creado" (fecha de la primera versión registrada) y
+    "actualizado" (la de la versión actual si es un update, n > 1; si no, None)}."""
     with _conectar() as con:
-        filas = con.execute("SELECT j.ruta, j.codigo, v.sha, v.tamano, v.n, v.etiqueta "
+        filas = con.execute("SELECT j.ruta, j.codigo, v.sha, v.tamano, v.n, v.etiqueta, v.fecha "
                             "FROM juegos j JOIN versiones v ON v.juego_id = j.id "
                             "WHERE j.ruta IS NOT NULL ORDER BY j.ruta, v.n").fetchall()
     res: dict[str, dict] = {}
     for f in filas:
-        d = res.setdefault(f["ruta"], {"codigo": f["codigo"], "etiqueta": None, "cadena": []})
+        d = res.setdefault(f["ruta"], {"codigo": f["codigo"], "etiqueta": None, "cadena": [],
+                                       "creado": f["fecha"], "actualizado": None})
         d["cadena"].append((f["sha"], f["tamano"]))
         d["etiqueta"] = f["etiqueta"] or f"v{f['n']}"      # la última fila (n mayor) = la actual
+        d["actualizado"] = f["fecha"] if len(d["cadena"]) > 1 else None
     return res
 
 
@@ -296,7 +299,8 @@ def temporal_junto_a(ruta: Path) -> Path:
     return ruta.parent / f".actualizacion-{uuid.uuid4().hex}.tmp"
 
 
-async def actualizar(sistema: str, nombre: str, rom, usuario: str, sin_cabecera_ok: bool) -> dict:
+async def actualizar(sistema: str, nombre: str, rom, usuario: str, sin_cabecera_ok: bool,
+                     codigo_distinto_ok: bool = False) -> dict:
     """Sustituye el ROM de un juego por su versión nueva subida desde el gestor."""
     sistema, nombre, ruta, juego = _juego_actualizable(sistema, nombre, Path(rom.filename or "").suffix)
     temporal = temporal_junto_a(ruta)
@@ -311,13 +315,13 @@ async def actualizar(sistema: str, nombre: str, rom, usuario: str, sin_cabecera_
         nuevo = _normalizar_contenedor(temporal, ruta, sistema)
         if nuevo is not temporal:
             temporal, sha, tamano = nuevo, _sha_fichero(nuevo), nuevo.stat().st_size
-        return await aplicar(sistema, nombre, temporal, sha, tamano, usuario, sin_cabecera_ok)
+        return await aplicar(sistema, nombre, temporal, sha, tamano, usuario, sin_cabecera_ok, codigo_distinto_ok)
     finally:
         temporal.unlink(missing_ok=True)
 
 
 async def aplicar(sistema: str, nombre: str, temporal: Path, sha: str, tamano: int, usuario: str,
-                  sin_cabecera_ok: bool) -> dict:
+                  sin_cabecera_ok: bool, codigo_distinto_ok: bool = False) -> dict:
     """Comprueba que `temporal` (ya en disco, misma carpeta) es una versión
     nueva del juego y, si lo es, lo pone en su sitio. Si no, HTTPException."""
     import asyncio
@@ -336,9 +340,18 @@ async def aplicar(sistema: str, nombre: str, temporal: Path, sha: str, tamano: i
                                  "no se vuelve atrás.")
     cod_nuevo = await asyncio.to_thread(cabeceras.codigo, temporal, sistema, nombre)
     cod_viejo = juego["codigo"]
+    forzar_codigo = False
     if cod_nuevo and cod_viejo and cod_nuevo[0] != cod_viejo:
-        raise HTTPException(409, f"No es el mismo juego: la cabecera del ROM actual dice «{cod_viejo}» y la del "
-                                 f"nuevo «{cod_nuevo[0]}» ({cod_nuevo[1]}).")
+        # Normalmente esto es un error (otra ROM distinta). Pero en romhacks la
+        # cabecera es la del juego BASE (p.ej. Light Platinum = Pokémon Ruby
+        # «AXVE»), así que el administrador puede CONFIRMAR que quiere
+        # sobrescribir este juego con otro de cabecera distinta (428, como
+        # sin_cabecera_ok). Al forzar, el juego adopta el código/título nuevos.
+        if not codigo_distinto_ok:
+            raise HTTPException(428, f"La cabecera del ROM actual dice «{cod_viejo}» y la del nuevo «{cod_nuevo[0]}» "
+                                     f"({cod_nuevo[1]}): no parecen el mismo juego. Confírmalo solo si de verdad "
+                                     f"quieres sobrescribir este juego con este fichero (p.ej. un romhack).")
+        forzar_codigo = True
     if cod_viejo and not cod_nuevo:
         # El juego tiene cabecera legible: lo nuevo también tiene que tenerla
         # (y la misma). Esto no se puede saltar confirmando.
@@ -352,7 +365,7 @@ async def aplicar(sistema: str, nombre: str, temporal: Path, sha: str, tamano: i
     st = ruta.stat()
     with _conectar() as con:
         n = _anadir_version(con, juego["id"], sha, tamano, usuario, cod_nuevo[0] if cod_nuevo else None)
-        if cod_nuevo and not cod_viejo:
+        if cod_nuevo and (not cod_viejo or forzar_codigo):
             con.execute("UPDATE juegos SET codigo = ?, titulo = ? WHERE id = ?", (cod_nuevo[0], cod_nuevo[1], juego["id"]))
         # El hilo de hashes no tiene que volver a leer el fichero entero.
         con.execute("INSERT OR REPLACE INTO hashes (ruta, tamano, mtime, sha) VALUES (?, ?, ?, ?)",

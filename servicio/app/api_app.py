@@ -6,6 +6,14 @@ en sund.es por delante de jarjar), así que una única APK sirve para
 cualquier servicio RomsLibrary: solo cambia la URL y la clave de acceso.
 
 - "version" y "apk" son públicas (la app no es un dato sensible).
+- "hola" (pública) es la petición LIGERA del arranque: responde al instante
+  (sin disco pesado, sin Switch) si hay servicio, qué acceso da la clave
+  recibida y la versión de la app. Con ella la app ya se sabe conectada;
+  luego pide la tabla de juegos y, al final, las carátulas poco a poco.
+- Ninguna petición de metadatos (catálogo, versiones, ficheros de un grupo)
+  espera a una descompresión ni recorre el disco en el bucle de eventos:
+  todo lo síncrono va en hilos (asyncio.to_thread), y los tamaños/firmas de
+  los grupos salen de metacache.py. Solo esperan las descargas de verdad.
 - Librería PÚBLICA (ajuste "publico"): sin clave se ven y descargan SOLO los
   juegos COMPARTIDOS (fichas.py); los privados, como en una privada.
 - Acceso completo (también a los privados): la clave de la librería o el
@@ -20,15 +28,18 @@ cualquier servicio RomsLibrary: solo cambia la URL y la clave de acceso.
   origen (ROMSLIBRARY_APK_ORIGEN, sund.es): la app es igual para todos.
 """
 
+import asyncio
+import gzip
 import json
 import secrets
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 import accesos
 import ajustes
+import comprimidos
 import config
 import federacion
 import main as nucleo
@@ -36,7 +47,7 @@ import main as nucleo
 router = APIRouter()
 
 RUTA = "/APIs/RomLibraryApp"
-ACCIONES_PUBLICAS = {"version", "apk", "cliente_version", "cliente", "wii_version", "wii", "solicitar_acceso",
+ACCIONES_PUBLICAS = {"hola", "version", "apk", "cliente_version", "cliente", "wii_version", "wii", "solicitar_acceso",
                      "acceso_estado"}
 
 
@@ -94,6 +105,8 @@ async def api_app(request: Request):
             return accesos.solicitar(datos.get("token"), datos.get("nombre"), datos.get("consola"), ip)
         except accesos.Error as e:
             return JSONResponse({"success": False, "message": str(e)}, status_code=429)
+    if accion == "hola":
+        return _hola(request)
     if accion == "acceso_estado":
         return {"estado": accesos.estado(request.headers.get("x-app-token") or "")}
     if not _acceso_permitido(request, accion):
@@ -110,29 +123,35 @@ async def api_app(request: Request):
     if q.get("origen") and accion in ("caratula", "descargar", "grupo_ficheros", "grupo_fichero"):
         return _sin_intermediario()
     if accion == "sistemas":
-        return nucleo.listar_sistemas(I, T)
+        return await asyncio.to_thread(nucleo.listar_sistemas, I, T)
     if accion == "juegos":
         juegos = await federacion.listar_para_app(
             sistema=q.get("system"), texto=q.get("q"), libreria=q.get("libreria", "personal"), completo=completo)
         for juego in juegos:
             juego["coverUrl"] = _url_caratula(juego)
-        return juegos
+        return _json(request, juegos)
     if accion == "caratula":
-        return nucleo.servir_caratula(_param(q, "system"), _param(q, "filename"), I, T)
+        return await asyncio.to_thread(nucleo.servir_caratula, _param(q, "system"), _param(q, "filename"), I, T)
     if accion == "descargar":
-        return federacion.servir_descarga(_param(q, "system"), _param(q, "filename"))
+        return await asyncio.to_thread(federacion.servir_descarga, _param(q, "system"), _param(q, "filename"))
     if accion in ("grupo_ficheros", "grupo_fichero"):
         # Lo confirmado como corrupto no se sirve (410).
-        federacion.fichero_limpio(nucleo.nombre_seguro(_param(q, "system")), nucleo.nombre_seguro(_param(q, "grupo")))
+        await asyncio.to_thread(federacion.fichero_limpio, nucleo.nombre_seguro(_param(q, "system")),
+                                nucleo.nombre_seguro(_param(q, "grupo")))
     if accion == "grupo_ficheros":
-        return nucleo.ficheros_de_grupo(I, T, system=_param(q, "system"), grupo=_param(q, "grupo"))
+        # Solo metadatos: no espera a ninguna descompresión (como mucho la
+        # deja lanzada para cuando la app pida el fichero).
+        return await asyncio.to_thread(nucleo.ficheros_de_grupo, I, T, system=_param(q, "system"),
+                                       grupo=_param(q, "grupo"))
     if accion == "grupo_fichero":
-        return nucleo.fichero_de_grupo(I, T, system=_param(q, "system"), grupo=_param(q, "grupo"),
-                                       fichero=_param(q, "fichero"))
+        # En un hilo: si el fichero está guardado comprimido puede esperar a que
+        # se descomprima (ver comprimidos.respuesta) sin parar el resto del servicio.
+        return await asyncio.to_thread(nucleo.servir_fichero_de_grupo, _param(q, "system"), _param(q, "grupo"),
+                                       _param(q, "fichero"), comprimidos.ESPERA_APP)
     if accion == "versiones":
         # Versiones superadas de los juegos de esta librería y la actual de
         # cada uno: la app actualiza lo que tenga instalado (ver versiones.py).
-        return {"obsoletas": await federacion.obsoletas_para_app(completo)}
+        return _json(request, {"obsoletas": await federacion.obsoletas_para_app(completo)})
     if accion == "version":
         return await _version()
     if accion == "apk":
@@ -146,6 +165,32 @@ async def api_app(request: Request):
     if accion == "wii":
         return _wii_fichero(_param(q, "fichero"))
     raise HTTPException(status_code=404, detail="Acción desconocida.")
+
+
+def _json(request: Request, datos) -> Response:
+    """JSON, comprimido con gzip si el cliente lo acepta (Android lo pide y
+    lo descomprime solo; el catálogo baja de ~80 KB a ~10 KB). Solo para
+    estas respuestas de metadatos: las descargas nunca se comprimen."""
+    cuerpo = json.dumps(datos, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(cuerpo) > 2048 and "gzip" in request.headers.get("accept-encoding", "").lower():
+        return Response(gzip.compress(cuerpo, 5), media_type="application/json",
+                        headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
+    return Response(cuerpo, media_type="application/json", headers={"Vary": "Accept-Encoding"})
+
+
+def _hola(request: Request) -> dict:
+    """Fase 1 del arranque: respuesta inmediata (solo ajustes en memoria/SQLite
+    y el version.json de la APK, que se lee de un fichero pequeño)."""
+    completo = _clave_valida(request)
+    acceso = "completo" if completo else ("publico" if ajustes.publico() else "clave")
+    res = {"ok": True, "servicio": config.SERVICIO_VERSION, "libreria": ajustes.leer("nombre"), "acceso": acceso}
+    try:
+        info = nucleo.info_apk()
+    except (OSError, ValueError, KeyError):
+        info = None
+    if info:
+        res["app"] = {"versionCode": info["versionCode"], "versionName": info["versionName"]}
+    return res
 
 
 # ---------- APK ----------

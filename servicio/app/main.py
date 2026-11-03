@@ -28,7 +28,9 @@ from starlette.background import BackgroundTask
 
 import accesos
 import ajustes
+import comprimidos
 import config
+import metacache
 
 def extension_real_de_imagen(cabecera: bytes) -> Optional[str]:
     """Determina la extensión mirando los bytes de verdad, NUNCA el nombre de
@@ -92,7 +94,9 @@ EXTENSIONES_POR_SISTEMA = {
     # Wii (USB Loader GX): .wbfs o .iso. Un .wbfs de más de 4 GB va partido
     # (.wbfs + .wbf1, .wbf2...) como juego de varios ficheros.
     "wii": {".wbfs", ".wbf1", ".wbf2", ".wbf3", ".iso"},
-    "switch": {".nsp", ".xci"},
+    # .nsz/.xcz: ya comprimidos; se guardan tal cual y se sirven como
+    # .nsp/.xci (los .nsp/.xci se comprimen solos al importarlos, ver comprimidos.py).
+    "switch": {".nsp", ".xci", ".nsz", ".xcz"},
     "psx": {".bin", ".cue", ".chd", ".zip"},
     "ps2": {".iso", ".chd", ".zip"},
     "psp": {".iso", ".cso", ".zip"},
@@ -127,7 +131,9 @@ async def _ciclo_vida(_app):
     import externos
     import federacion
     import verificacion
+    metacache.precalentar(ROOT)
     federacion.arrancar_hilo_hashes()
+    comprimidos.arrancar_hilo()
     verificacion.arrancar_hilo()
     tarea_externos = asyncio.create_task(externos.bucle())
     # Actualización automática semanal de las fuentes externas (los viernes).
@@ -155,6 +161,44 @@ async def _ciclo_vida(_app):
 # hace falta publicar el mapa completo de rutas.
 app = FastAPI(title="RomsLibrary", lifespan=_ciclo_vida, docs_url=None, redoc_url=None, openapi_url=None)
 ajustes.inicializar()
+
+
+class _LogAccesos:
+    """Log de accesos propio (uvicorn va con --no-access-log porque las URLs
+    pueden llevar claves en la query): método, ruta, SOLO el parámetro
+    «accion», estado, ms hasta la cabecera y ms totales. Nunca la query
+    completa, cabeceras, tokens ni android_id. Sin /api/health (healthcheck)."""
+
+    def __init__(self, app_asgi):
+        self.app = app_asgi
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("path") == "/api/health":
+            return await self.app(scope, receive, send)
+        inicio = time.monotonic()
+        estado = {"codigo": 0, "cabecera": None}
+
+        async def enviar(mensaje):
+            if mensaje["type"] == "http.response.start":
+                estado["codigo"] = mensaje["status"]
+                estado["cabecera"] = time.monotonic()
+            await send(mensaje)
+
+        try:
+            await self.app(scope, receive, enviar)
+        finally:
+            fin = time.monotonic()
+            accion = ""
+            for par in scope.get("query_string", b"").decode("latin-1").split("&"):
+                if par.startswith("accion="):
+                    accion = " accion=" + re.sub(r"[^a-z_]", "", par[7:].lower())[:30]
+                    break
+            primera = (estado["cabecera"] or fin) - inicio
+            print(f"[acceso] {scope.get('method')} {scope.get('path', '')[:120]}{accion} {estado['codigo'] or 'cortada'} "
+                  f"{primera * 1000:.0f}ms total={(fin - inicio) * 1000:.0f}ms", flush=True)
+
+
+app.add_middleware(_LogAccesos)
 # Una carpeta por sistema soportado: en una instalación nueva no existe
 # ninguna y la primera subida fallaba con "Crea la carpeta antes de subir".
 for _sistema in EXTENSIONES_POR_SISTEMA:
@@ -261,6 +305,10 @@ def ficheros_de_grupo(
     la descarga empieza al momento y cada uno se puede reanudar (Range)."""
     exigir_token(request, token)
     carpeta = _carpeta_grupo(system, grupo)
+    return _ficheros_de_grupo(carpeta)
+
+
+def _ficheros_de_grupo(carpeta: Path) -> list[dict]:
     roles = {}
     ruta_json = carpeta / "grupo.json"
     if ruta_json.is_file():
@@ -268,11 +316,17 @@ def ficheros_de_grupo(
             roles = {f["nombre"]: f.get("rol") for f in json.loads(ruta_json.read_text(encoding="utf-8")).get("ficheros", [])}
         except (json.JSONDecodeError, OSError, KeyError):
             roles = {}
-    return [
-        {"nombre": p.relative_to(carpeta).as_posix(), "tamano": p.stat().st_size, "rol": roles.get(p.name)}
-        for p in sorted(carpeta.rglob("*"))
-        if p.is_file() and p.name != "grupo.json"
-    ]
+    # Nombres y tamaños LÓGICOS: un «X.nsz» guardado se ve como «X.nsp» (ver
+    # comprimidos.py). Se empieza ya a descomprimir lo que haga falta: la app
+    # pide los ficheros justo después, uno detrás de otro.
+    res = []
+    for nombre, p in comprimidos.ficheros_logicos(carpeta):
+        if Path(nombre).name == "grupo.json":
+            continue
+        if comprimidos.es_comprimido(p) and comprimidos.disponible():
+            comprimidos.preparar(p)
+        res.append({"nombre": nombre, "tamano": comprimidos.tamano_logico(p), "rol": roles.get(Path(nombre).name)})
+    return res
 
 
 @app.get("/api/group/file")
@@ -286,12 +340,24 @@ def fichero_de_grupo(
     """Un fichero concreto de un grupo (ruta relativa, puede llevar
     subcarpetas). FileResponse soporta Range: la app reanuda tras un corte."""
     exigir_token(request, token)
+    return servir_fichero_de_grupo(system, grupo, fichero, comprimidos.ESPERA_APP)
+
+
+def servir_fichero_de_grupo(system: str, grupo: str, fichero: str, espera: float):
+    """Bloquea hasta `espera` s si hay que descomprimir (comprimidos.respuesta):
+    desde código async, llamarla con asyncio.to_thread."""
     carpeta = _carpeta_grupo(system, grupo)
     for parte in fichero.split("/"):
         nombre_seguro(parte)
     ruta = (carpeta / fichero).resolve()
-    if not str(ruta).startswith(str(carpeta) + os.sep) or not ruta.is_file():
+    if not str(ruta).startswith(str(carpeta) + os.sep):
         raise HTTPException(status_code=404, detail="Fichero no encontrado en el grupo.")
+    if not ruta.is_file():
+        guardado = comprimidos.fisico(carpeta, fichero)
+        if guardado is None or not comprimidos.es_comprimido(guardado):
+            raise HTTPException(status_code=404, detail="Fichero no encontrado en el grupo.")
+        # Guardado comprimido: se sirve descomprimido desde la caché.
+        return comprimidos.respuesta(guardado, ruta.name, espera)
     tipo, _ = mimetypes.guess_type(str(ruta))
     return FileResponse(ruta, media_type=tipo or "application/octet-stream", filename=ruta.name)
 
@@ -407,7 +473,7 @@ def listar_juegos_galeria(
             caratula = buscar_caratula(carpeta.name, f.name)
             es_grupo = f.is_dir()
             tamano = (
-                sum(p.stat().st_size for p in f.rglob("*") if p.is_file())
+                metacache.tamano(f)       # lo que ocupa descomprimido (lo que se descarga), sin recorrer el disco
                 if es_grupo else f.stat().st_size
             )
             tipo_grupo = None
@@ -469,7 +535,7 @@ def carpeta_como_fichero(carpeta: Path) -> Path:
     nombre = carpeta.name
     lanzable = None
     for ext in (".m3u", ".cue", ".iso", ".chd", ".nsp", ".xci", ".wbfs"):
-        if (carpeta / f"{nombre}{ext}").is_file():
+        if comprimidos.fisico(carpeta, f"{nombre}{ext}") is not None:      # un .nsz cuenta como su .nsp
             lanzable = nombre + ext
             break
     if lanzable is None:
@@ -604,6 +670,11 @@ async def subir_juego(
             detail=f"Extensión inválida para el sistema '{system}': se acepta {sorted(extensiones_validas)}.",
         )
 
+    if system == "switch" and comprimidos.es_comprimido(filename):
+        # Un .nsz/.xcz suelto se serviría tal cual (la consola no lo instala): los
+        # comprimidos solo van dentro de un grupo de Switch, que se sirve descomprimido.
+        raise HTTPException(status_code=400, detail="Un .nsz/.xcz se sube desde el gestor como juego de Switch "
+                                                    "(base + updates/DLC), no como fichero suelto.")
     if system == "wii" and Path(filename).suffix.lower() in PARTES_WBFS:
         raise HTTPException(status_code=400, detail="Un .wbf1/.wbf2... es una parte de un .wbfs: súbelo como juego "
                                                     "de varios ficheros junto con su .wbfs.")
@@ -740,6 +811,12 @@ async def anadir_fichero_grupo(
     carpeta_juego = (ROOT / system / nombre_juego).resolve()
     if not str(carpeta_juego).startswith(str(ROOT.resolve())) or not carpeta_juego.is_dir():
         raise HTTPException(status_code=404, detail="Grupo no encontrado -- crea el grupo primero.")
+    if system == "switch" and comprimidos.es_comprimido(filename) and not comprimidos.disponible():
+        raise HTTPException(status_code=400, detail="Esta librería no tiene las claves de Switch: no puede "
+                                                    "descomprimir .nsz/.xcz. Súbelo como .nsp/.xci.")
+    if system == "switch" and comprimidos.fisico(carpeta_juego, comprimidos.nombre_logico(filename)) is not None:
+        # «X.nsp» y «X.nsz» serían el mismo fichero para la consola.
+        raise HTTPException(status_code=409, detail=f"«{filename}» ya está en el grupo (comprimido o sin comprimir).")
     destino = carpeta_juego / filename
     with open(destino, "wb") as salida:
         while trozo := await fichero.read(1024 * 1024):
@@ -785,6 +862,7 @@ def _registrar_rol_grupo(carpeta_juego: Path, filename: str, rol: str) -> None:
             datos = json.loads(ruta_json.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             datos = {"tipo": "switch_base_dlc", "ficheros": []}
+    filename = comprimidos.nombre_logico(filename)   # siempre el nombre lógico (.nsp/.xci)
     datos["ficheros"] = [f for f in datos.get("ficheros", []) if f.get("nombre") != filename]
     datos["ficheros"].append({"nombre": filename, "rol": rol})
     ruta_json.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -830,7 +908,7 @@ async def finalizar_grupo(
             )
         nombres_registrados = {f["nombre"] for f in ficheros_reg}
         nombres_en_disco = {
-            p.name for p in carpeta_juego.iterdir()
+            comprimidos.nombre_logico(p.name) for p in carpeta_juego.iterdir()
             if p.is_file() and p.suffix.lower() in EXTENSIONES_POR_SISTEMA["switch"]
         }
         if nombres_registrados != nombres_en_disco:
@@ -843,10 +921,13 @@ async def finalizar_grupo(
         base = bases[0]
         nombre_base = nombre_juego + Path(base["nombre"]).suffix.lower()
         if base["nombre"] != nombre_base:
-            if (carpeta_juego / nombre_base).exists():
+            if comprimidos.fisico(carpeta_juego, nombre_base) is not None:
                 shutil.rmtree(carpeta_juego, ignore_errors=True)
                 raise HTTPException(status_code=400, detail=f"Un update/DLC ya se llama «{nombre_base}».")
-            (carpeta_juego / base["nombre"]).rename(carpeta_juego / nombre_base)
+            guardado = comprimidos.fisico(carpeta_juego, base["nombre"])
+            # Si llegó comprimido, sigue comprimido: «Juego.nsz» (se ve como «Juego.nsp»).
+            guardado.rename(carpeta_juego / (comprimidos.nombre_comprimido(nombre_base)
+                                             if comprimidos.es_comprimido(guardado) else nombre_base))
             base["nombre"] = nombre_base
             ruta_json.write_text(json.dumps(datos_grupo, ensure_ascii=False, indent=2), encoding="utf-8")
     elif es_multidisco:
@@ -860,6 +941,8 @@ async def finalizar_grupo(
         _ordenar_wbfs_partido(carpeta_juego, nombre_juego)
     if system in ("switch", "wii"):
         carpeta_juego = carpeta_como_fichero(carpeta_juego)
+    if system == "switch":
+        comprimidos.avisar()        # a comprimir (.nsp/.xci) o verificar (.nsz/.xcz) en segundo plano
     if system in ("psx", "ps2"):
         problemas = reparar_cues(carpeta_juego)
         if problemas:
@@ -992,7 +1075,11 @@ def renombrar_juego(
     origen.rename(destino)
     if lanzable is not None:
         nombre_lanzable = nuevo_nombre if ext_grupo else nuevo_nombre + lanzable.suffix
-        (destino / lanzable.name).rename(destino / nombre_lanzable)
+        # Switch: el lanzable puede estar guardado comprimido («X.nsz» = «X.nsp», ver
+        # comprimidos.py); se renombra lo que hay en disco y grupo.json usa el lógico.
+        guardado = comprimidos.fisico(destino, lanzable.name) or destino / lanzable.name
+        guardado.rename(destino / (comprimidos.nombre_comprimido(nombre_lanzable)
+                                   if comprimidos.es_comprimido(guardado) else nombre_lanzable))
         ruta_json = destino / "grupo.json"
         if ruta_json.is_file():
             datos_grupo = json.loads(ruta_json.read_text(encoding="utf-8"))
@@ -1069,7 +1156,9 @@ def uso_disco_datos() -> dict:
     extra configuradas (en sund.es: las películas y series de Jellyfin, que
     comparten disco con los ROMs)."""
     disco_total, disco_usado, disco_libre = shutil.disk_usage(ROOT)
-    categorias = {"ROMs (RomsLibrary)": _tamano_carpeta_bytes(ROOT)}
+    categorias = {"ROMs (RomsLibrary)": _tamano_carpeta_bytes(ROOT),
+                  # Switch descomprimido para servir (LRU, ver comprimidos.py).
+                  "Caché de Switch": comprimidos.uso_cache()["bytes"]}
     for nombre, ruta in config.DISCO_EXTRA:
         categorias[nombre] = _tamano_carpeta_bytes(ruta)
     return {"disco_total": disco_total, "disco_usado": disco_usado, "disco_libre": disco_libre,
@@ -1099,6 +1188,7 @@ externos.inicializar()
 fichas.inicializar()
 accesos.inicializar()
 verificacion.inicializar()
+comprimidos.inicializar()
 app.include_router(api_app.router)
 app.include_router(federacion.router)
 app.include_router(gestor.router)

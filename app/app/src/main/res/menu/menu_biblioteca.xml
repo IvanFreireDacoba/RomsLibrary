@@ -24,4 +24,8 @@
         android:id="@+id/menuCambiarCarpeta"
         android:title="Cambiar carpeta de ROMs"
         android:showAsAction="never" />
+    <item
+        android:id="@+id/menuVersion"
+        android:title="Versión"
+        android:showAsAction="never" />
 </menu>

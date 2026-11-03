@@ -5,3 +5,6 @@ datos/
 app/app/debug.keystore
 cliente/dist/
 cliente/build/
+# Claves de consola (Switch prod.keys/title.keys): nunca en el repositorio.
+*.keys
+keys/

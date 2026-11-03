@@ -777,16 +777,16 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     <label for="rl-switch-nombre">Nombre del juego</label>
                     <input type="text" id="rl-switch-nombre" placeholder="ej. Mi juego">
 
-                    <label>Juego base (.nsp / .xci)</label>
+                    <label>Juego base (.nsp / .xci, o ya comprimido .nsz / .xcz)</label>
                     <div class="rl-drop" id="rl-drop-switch-base">Arrastra aquí el juego base, o haz clic para elegirlo</div>
-                    <input type="file" id="rl-input-switch-base" accept=".nsp,.xci" style="display:none;">
+                    <input type="file" id="rl-input-switch-base" accept=".nsp,.xci,.nsz,.xcz" style="display:none;">
 
                     <label style="display:block;margin-top:12px;">
                         <input type="checkbox" id="rl-switch-con-updates"> Subo updates
                     </label>
                     <div id="rl-switch-updates" style="display:none;">
                         <div class="rl-drop" id="rl-drop-switch-updates">Arrastra aquí los updates (uno o varios)</div>
-                        <input type="file" id="rl-input-switch-updates" accept=".nsp,.xci" multiple style="display:none;">
+                        <input type="file" id="rl-input-switch-updates" accept=".nsp,.xci,.nsz,.xcz" multiple style="display:none;">
                     </div>
 
                     <label style="display:block;margin-top:12px;">
@@ -794,7 +794,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     </label>
                     <div id="rl-switch-dlcs" style="display:none;">
                         <div class="rl-drop" id="rl-drop-switch-dlcs">Arrastra aquí los DLCs (uno o varios)</div>
-                        <input type="file" id="rl-input-switch-dlcs" accept=".nsp,.xci" multiple style="display:none;">
+                        <input type="file" id="rl-input-switch-dlcs" accept=".nsp,.xci,.nsz,.xcz" multiple style="display:none;">
                     </div>
                 </div>
 
@@ -1166,7 +1166,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         let rlNombreSwitchSugerido = '';
         rlSetupDrop('rl-drop-switch-base', 'rl-input-switch-base', 'Arrastra aquí el juego base, o haz clic para elegirlo', (file) => {
             const campo = document.getElementById('rl-switch-nombre');
-            const sugerido = file.name.replace(/\.(nsp|xci)$/i, '').replace(/\s*[\[(][^\])]*[\])]/g, '').trim();
+            const sugerido = file.name.replace(/\.(nsp|xci|nsz|xcz)$/i, '').replace(/\s*[\[(][^\])]*[\])]/g, '').trim();
             if (!campo.value.trim() || campo.value === rlNombreSwitchSugerido) {
                 campo.value = sugerido;
                 rlNombreSwitchSugerido = sugerido;
@@ -1212,7 +1212,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             n64: ['.n64', '.z64', '.v64', '.zip'],
             gc: ['.iso', '.gcm', '.rvz', '.zip'],
             wii: ['.wbfs', '.iso', '.wbf1', '.wbf2', '.wbf3'],
-            switch: ['.nsp', '.xci'],
+            switch: ['.nsp', '.xci', '.nsz', '.xcz'],
             psx: ['.bin', '.cue', '.chd', '.zip'],
             ps2: ['.iso', '.chd', '.zip'],
             psp: ['.iso', '.cso', '.zip'],
@@ -1984,7 +1984,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             }
         }
 
-        async function rlEnviarUpdate(juego, fichero, sinCabecera) {
+        async function rlEnviarUpdate(juego, fichero, forzar) {
             const msg = document.getElementById('rl-edit-msg');
             msg.style.color = '#9fd9a0';
             const form = new FormData();
@@ -1992,7 +1992,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             form.append('sistema', juego.system);
             form.append('nombre', juego.filename);
             form.append('rom', fichero);
-            if (sinCabecera) form.append('sin_cabecera_ok', '1');
+            if (forzar) { form.append('sin_cabecera_ok', '1'); form.append('codigo_distinto_ok', '1'); }
             rlUltimoTamano = fichero.size;
             const data = await rlSubirConProgreso(form, msg);
             if (data.success) {
@@ -2002,8 +2002,10 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                 rlCargarJuegos();
                 return;
             }
-            if (data._status === 428 && !sinCabecera) {
-                if (confirm(data.message + '\n\n¿Es una versión nueva de «' + juego.filename + '»?')) return rlEnviarUpdate(juego, fichero, true);
+            // 428 = necesita confirmación (sin cabecera comprobable, o cabecera de
+            // OTRO juego -- caso romhack: Light Platinum trae la cabecera de Ruby).
+            if (data._status === 428 && !forzar) {
+                if (confirm(data.message + '\n\n¿Usar este fichero como nueva versión de «' + juego.filename + '» de todas formas?')) return rlEnviarUpdate(juego, fichero, true);
                 msg.textContent = 'Cancelado.';
                 return;
             }
@@ -2049,8 +2051,8 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             msg.textContent = 'Descargando el enlace para comprobarlo...';
             try {
                 let data = await rlEnviarExterno(cuerpo);
-                if (!data.success && data._status === 428 && confirm(data.message + '\n\n¿Es una versión nueva de «' + juego.filename + '»?')) {
-                    data = await rlEnviarExterno({ ...cuerpo, sin_cabecera_ok: true });
+                if (!data.success && data._status === 428 && confirm(data.message + '\n\n¿Usar este fichero como nueva versión de «' + juego.filename + '» de todas formas?')) {
+                    data = await rlEnviarExterno({ ...cuerpo, sin_cabecera_ok: true, codigo_distinto_ok: true });
                 }
                 if (!data.success) throw new Error(data.message);
                 msg.style.color = '#7bffb0';

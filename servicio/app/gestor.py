@@ -212,7 +212,8 @@ async def subir_o_editar(request: Request, usuario: str = Usuario):
                                         usuario, compartido, form, titulo=titulo, idiomas=_idiomas(form)))
         if modo == "actualizar":
             return _ok(await versiones.actualizar(sistema, str(form.get("nombre", "")), _fichero(form, "rom"), usuario,
-                                                  sin_cabecera_ok=str(form.get("sin_cabecera_ok")) == "1"))
+                                                  sin_cabecera_ok=str(form.get("sin_cabecera_ok")) == "1",
+                                                  codigo_distinto_ok=str(form.get("codigo_distinto_ok")) == "1"))
         rom = _fichero(form, "rom")
         r = await nucleo.subir_juego(I, T, system=sistema, filename=str(form.get("nombre", "")).strip(), rom=rom,
                                      cover=_fichero(form, "cover", obligatorio=False))
@@ -394,7 +395,8 @@ async def externo(request: Request, usuario: str = Usuario):
             externos.quitar(sistema, nombre)
             return _ok()
         return _ok(await externos.guardar_enlace(sistema, nombre, str(d.get("url", "")), str(d.get("pagina", "")), usuario,
-                                                 sin_cabecera_ok=bool(d.get("sin_cabecera_ok"))))
+                                                 sin_cabecera_ok=bool(d.get("sin_cabecera_ok")),
+                                                 codigo_distinto_ok=bool(d.get("codigo_distinto_ok"))))
     except HTTPException as e:
         return _error(e)
 

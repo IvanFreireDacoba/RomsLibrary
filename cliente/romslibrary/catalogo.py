@@ -54,6 +54,7 @@ class Juego:
     variantes: list["Juego"] = field(default_factory=list)
     progreso: float = -1.0           # 0..1 descargando, -1 nada
     en_cola: bool = False
+    preparando: bool = False         # el servidor lo está preparando (503 + Retry-After, Switch)
     error: str = ""
 
     def base(self, nuestra: str) -> str:

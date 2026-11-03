@@ -3,6 +3,7 @@
  * mando. Instala juegos de Wii y GameCube en el disco de USB Loader GX y de
  * consolas antiguas en las carpetas de sus emuladores; también los borra.
  */
+#include <SDL2/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,6 +50,7 @@ static long long libre = -1;
 static uint64_t libre_cuando;
 static char version_nueva[32];
 static int salir;
+static int acerca_licencias;             /* «Versión»: 1 = leyendo LICENCIAS.txt */
 static const char *problema_usb;      /* se mira una vez al arrancar (lee el disco) */
 
 /* carátula del seleccionado */
@@ -134,15 +136,89 @@ static void refrescar_instalados(void) {
     libre_cuando = 0;
 }
 
+/*
+ * Arranque por fases, sin bloquear el mando (como la app de Android 2.35.0):
+ *  1) «hola» (accion=hola, ligera e inmediata en el servicio 1.2.0+): en
+ *     cuanto responde, la Wii se marca CONECTADA. Una librería antigua no la
+ *     conoce y responde 404/401: también cuenta como conectada.
+ *  2) La tabla de juegos (accion=juegos), que se pinta en cuanto llega.
+ *  3) Las carátulas, perezosas: solo la del juego seleccionado, de una en una
+ *     y con caché en la SD (caratulas.c).
+ * Todo en un hilo con su propia conexión; la interfaz recoge el resultado.
+ * La búsqueda de actualizaciones de la app va en OTRO hilo, independiente,
+ * con reintentos: que falle el catálogo no impide avisar de una versión nueva.
+ */
+static SDL_Thread *hilo_carga;
+static volatile int carga_lista;        /* hay catálogo nuevo por recoger */
+static volatile int conexion = 0;       /* 0 conectando, 1 conectada, -1 sin conexión */
+static int cargando;                    /* hilo de carga en marcha (o resultado sin recoger) */
+static int primera_carga = 1;
+static Catalogo cat_nuevo;
+static int cat_nuevo_r, acceso_nuevo;
+static char cat_nuevo_error[300];
+static uint64_t ms_inicio, ms_conectada, ms_tabla;
+
+static int hilo_cargar(void *nada) {
+    (void)nada;
+    Conexion *c = con_nueva();
+    char api[400], url[500], error[300] = "", *datos;
+    size_t l;
+    url_api(ajuste("url"), api, sizeof api);
+    snprintf(url, sizeof url, "%s?accion=hola", api);
+    for (int intento = 0; intento < 3 && conexion != 1; intento++) {
+        if (intento) plat_dormir_ms(2000);
+        int estado = http_memoria(c, "GET", url, ajuste("clave"), NULL, &datos, &l, 65536, error, sizeof error);
+        free(datos);
+        conexion = estado > 0 ? 1 : -1;     /* cualquier respuesta HTTP = el servidor está ahí */
+    }
+    if (conexion == 1 && !ms_conectada) ms_conectada = plat_ms();
+    acceso_nuevo = acceso_comprobar(c);
+    error[0] = 0;
+    cat_nuevo_r = catalogo_cargar(c, &cat_nuevo, error, sizeof error);
+    if (cat_nuevo_r == 0) conexion = 1;
+    snprintf(cat_nuevo_error, sizeof cat_nuevo_error, "%s", error);
+    con_liberar(c);
+    carga_lista = 1;
+    return 0;
+}
+
 static void cargar_catalogo(void) {
-    pantalla_espera("Cargando la librería…");
+    if (cargando) return;
+    cargando = 1;
+    carga_lista = 0;
+    if (conexion != 1) conexion = 0;
+    hilo_carga = SDL_CreateThread(hilo_cargar, "catalogo", NULL);
+    if (!hilo_carga) {          /* sin hilos: a la antigua, esperando */
+        pantalla_espera("Cargando la librería…");
+        hilo_cargar(NULL);
+    }
+}
+
+static void avisos_de_arranque(int acceso);
+
+/* El catálogo ya está: se cambia por el anterior (solo cuando no hay un
+ * diálogo abierto que apunte a un juego concreto). */
+static void recoger_catalogo(void) {
+    if (!carga_lista || modo == M_OPCIONES || modo == M_IDIOMAS ||
+        (modo == M_CONFIRMAR && (confirmar == C_BORRAR || confirmar == C_INSTALAR_CORRUPTO || confirmar == C_ACTUALIZAR_JUEGOS)))
+        return;
+    if (hilo_carga) SDL_WaitThread(hilo_carga, NULL);
+    hilo_carga = NULL;
+    carga_lista = 0;
+    cargando = 0;
+    if (!ms_tabla) ms_tabla = plat_ms();
+    if (getenv("RL_TIEMPOS"))
+        printf("[tiempos] conectada %llu ms · tabla %llu ms\n", (unsigned long long)(ms_conectada ? ms_conectada - ms_inicio : 0),
+               (unsigned long long)(ms_tabla - ms_inicio));
     catalogo_liberar(&cat);
+    cat = cat_nuevo;
+    memset(&cat_nuevo, 0, sizeof cat_nuevo);
     free(preferida);
     preferida = NULL;
-    char error[300] = "";
-    int r = catalogo_cargar(con, &cat, error, sizeof error);
+    int r = cat_nuevo_r;
     error_catalogo = r < 0 ? -r : 0;
-    snprintf(error_catalogo_texto, sizeof error_catalogo_texto, "%s", r ? error : "");
+    snprintf(error_catalogo_texto, sizeof error_catalogo_texto, "%s", r ? cat_nuevo_error : "");
+    if (r == -1 && !error_catalogo_texto[0]) snprintf(error_catalogo_texto, sizeof error_catalogo_texto, "No se pudo cargar la librería.");
     if (r == -401) {
         snprintf(error_catalogo_texto, sizeof error_catalogo_texto,
                  *ajuste("acceso_pendiente") ? "Has pedido acceso a esta librería: falta que lo acepte su administrador."
@@ -153,6 +229,33 @@ static void cargar_catalogo(void) {
     calcular_pestanas();
     sel = primera = 0;
     calcular_entradas();
+    if (primera_carga) {
+        primera_carga = 0;
+        avisos_de_arranque(acceso_nuevo);
+    } else if (acceso_nuevo > 0) {
+        avisar("¡Acceso a la librería aceptado!", C_ACENTO);
+    }
+}
+
+/* Autoactualización, en su propio hilo: hasta 3 intentos (0, 10 y 30 s). */
+static volatile int actualizacion_hecha, actualizacion_hay;
+static char actualizacion_version[32];
+
+static int hilo_actualizacion(void *nada) {
+    (void)nada;
+    Conexion *c = con_nueva();
+    static const int espera[] = {0, 10000, 30000};
+    for (int i = 0; i < 3; i++) {
+        for (int t = 0; t < espera[i] && !plat_debe_salir(); t += 500) plat_dormir_ms(500);
+        int r = actualizacion_buscar(c, actualizacion_version, sizeof actualizacion_version);
+        if (r >= 0) {
+            actualizacion_hay = r > 0;
+            break;
+        }
+    }
+    con_liberar(c);
+    actualizacion_hecha = 1;
+    return 0;
 }
 
 static int juegos_con_version_nueva(void) {
@@ -337,7 +440,7 @@ static void texto_item(ItemMenu i, char *s, size_t n) {
         texto_tamano(restos, t, sizeof t);
         snprintf(s, n, "Borrar descargas sin terminar (%s)", t);
         break;
-    case MI_ACERCA: snprintf(s, n, "Acerca de RomsLibrary"); break;
+    case MI_ACERCA: snprintf(s, n, "Versión, términos y licencias"); break;
     case MI_SALIR: snprintf(s, n, "Salir"); break;
     }
 }
@@ -414,7 +517,10 @@ static void elegir_menu(void) {
         modo = M_CONFIRMAR;
         break;
     }
-    case MI_ACERCA: modo = M_ACERCA; break;
+    case MI_ACERCA:
+        modo = M_ACERCA;
+        acerca_licencias = 0;
+        break;
     case MI_SALIR: {
         EstadoDescargas d;
         instalar_estado(&d);
@@ -436,7 +542,10 @@ static void dibujar_cabecera(void) {
     int wt = texto(20, 10, LETRA_TITULO, C_ACENTO, 0, "RomsLibrary");
     const char *url = ajuste("url");
     const char *host = strstr(url, "://") ? strstr(url, "://") + 3 : url;
-    texto(20 + wt + 14, 18, LETRA_PEQUENA, C_TENUE, 200, host);
+    int wh = texto(20 + wt + 14, 18, LETRA_PEQUENA, C_TENUE, 200, host);
+    /* Fase 1 del arranque: la respuesta ligera marca la Wii como conectada. */
+    texto(20 + wt + 14 + wh + 10, 18, LETRA_PEQUENA, conexion > 0 ? C_ACENTO : conexion < 0 ? C_ROJO : C_TENUE, 0,
+          conexion > 0 ? "● conectada" : conexion < 0 ? "● sin conexión" : "● conectando…");
     if (plat_ms() > libre_cuando) {
         const char *raiz = instalar_raiz("wii");
         libre = raiz ? plat_libre(raiz) : -1;
@@ -497,7 +606,8 @@ static void estado_fila(const Juego *j, char *t, size_t n, unsigned *color) {
 static void dibujar_lista(void) {
     rect(10, LISTA_Y - 4, LISTA_ANCHO, FILAS * ALTO_FILA + 8, C_PANEL);
     if (!n_entradas) {
-        const char *t = error_catalogo_texto[0] ? error_catalogo_texto
+        const char *t = cargando && !cat.n ? (conexion > 0 ? "Conectada. Cargando la lista de juegos…" : "Conectando con la librería…")
+                        : error_catalogo_texto[0] ? error_catalogo_texto
                         : solo_instalados        ? "No hay nada instalado de esta consola."
                         : !*ajuste("clave") && !*ajuste("acceso_pendiente")
                             ? "Sin acceso solo se ven los juegos que la librería comparte. Si es tu librería, pulsa 1 → "
@@ -505,7 +615,7 @@ static void dibujar_lista(void) {
                         : *ajuste("acceso_pendiente")
                             ? "Has pedido acceso: cuando lo acepten en el gestor, pulsa 1 para comprobarlo."
                             : "No hay juegos de esta consola en la librería.";
-        parrafo(24, LISTA_Y + 10, LETRA_NORMAL, error_catalogo ? C_NARANJA : C_TENUE, LISTA_ANCHO - 28, t);
+        parrafo(24, LISTA_Y + 10, LETRA_NORMAL, error_catalogo && !cargando ? C_NARANJA : C_TENUE, LISTA_ANCHO - 28, t);
         return;
     }
     for (int f = 0; f < FILAS && primera + f < n_entradas; f++) {
@@ -761,22 +871,69 @@ static void dibujar_aviso(void) {
     texto(x + 18, 320, LETRA_NORMAL, C_ACENTO, 0, "A Aceptar");
 }
 
+/*
+ * «Versión»: versión de la app, términos/políticas (la página legal pública
+ * de sund.es, sin texto legal propio aquí), la licencia MIT de RomsLibrary y
+ * las de terceros que van dentro de boot.dol: A abre LICENCIAS.txt (el que
+ * se instala junto a boot.dol) para leerlo entero con la cruceta.
+ */
+static char **lic_lineas;
+static int lic_n, lic_primera;
+#define LIC_FILAS 17
+
+static void cargar_licencias(void) {
+    if (lic_lineas) return;
+    char ruta[400];
+    snprintf(ruta, sizeof ruta, "%s/LICENCIAS.txt", plat_carpeta_app());
+    FILE *f = fopen(ruta, "rb");
+    if (!f) return;
+    char linea[512];
+    int cap = 0;
+    while (fgets(linea, sizeof linea, f)) {
+        linea[strcspn(linea, "\r\n")] = 0;
+        if (lic_n == cap) {
+            cap = cap ? cap * 2 : 256;
+            char **nuevo = realloc(lic_lineas, sizeof(char *) * (size_t)cap);
+            if (!nuevo) break;
+            lic_lineas = nuevo;
+        }
+        lic_lineas[lic_n++] = strdup(linea);
+    }
+    fclose(f);
+}
+
 static void dibujar_acerca(void) {
-    int w = 580, x = (ANCHO - w) / 2;
-    caja(w, 400, "RomsLibrary " RL_VERSION " para Wii");
-    char t[1200];
+    int w = 600, x = (ANCHO - w) / 2;
+    if (acerca_licencias) {
+        caja(w, 440, "Licencias (LICENCIAS.txt)");
+        if (!lic_n) {
+            parrafo(x + 18, 70, LETRA_NORMAL, C_NARANJA, w - 36,
+                    "No se encuentra LICENCIAS.txt junto a boot.dol. Está en el zip de la app (accion=wii&fichero=LICENCIAS.txt).");
+        }
+        for (int i = 0; i < LIC_FILAS && lic_primera + i < lic_n; i++)
+            texto(x + 18, 62 + i * 20, LETRA_PEQUENA, C_TEXTO, w - 36, lic_lineas[lic_primera + i]);
+        char t[80];
+        snprintf(t, sizeof t, "Línea %d de %d · ↑↓ ←→ mover · B Volver", lic_n ? lic_primera + 1 : 0, lic_n);
+        texto(x + 18, 422, LETRA_PEQUENA, C_ACENTO, 0, t);
+        return;
+    }
+    caja(w, 440, "Versión");
+    char t[1400];
     snprintf(t, sizeof t,
-             "Software libre (MIT) · https://sund.es/romslibrary\n"
+             "RomsLibrary para Wii %s\n"
              "Librería: %s\nCarpeta de la app: %s\n\n"
+             "Términos y condiciones de uso, privacidad y aviso legal: sund.es/romslibrary/aviso-legal "
+             "(contacto: support@sund.es).\n"
              "Normas: no está permitido publicar como públicos juegos con copyright; los juegos privados deben "
              "obtenerse de manera legítima (p. ej., la copia de seguridad de tu original). No nos "
-             "responsabilizamos de los usos contrarios a estas normas. Ver sund.es/romslibrary/aviso-legal.\n\n"
-             "Incluye mbedTLS (Apache-2.0), SDL2, SDL2_ttf y SDL2_image (zlib), FreeType (FTL), libpng, libjpeg "
-             "(IJG), zlib, jansson (MIT), libogc, las fuentes DejaVu y los certificados raíz de Mozilla (MPL-2.0). "
-             "Textos completos en LICENCIAS.txt, junto a boot.dol.",
-             ajuste("url"), plat_carpeta_app());
-    parrafo(x + 18, 96, LETRA_PEQUENA, C_TEXTO, w - 36, t);
-    texto(x + 18, 410, LETRA_NORMAL, C_ACENTO, 0, "B Volver");
+             "responsabilizamos de los usos contrarios a estas normas.\n\n"
+             "Licencia: MIT · © 2026 Iván Freire · github.com/IvanFreireDacoba/RomsLibrary\n"
+             "Terceros: mbedTLS (Apache-2.0), SDL2, SDL2_ttf y SDL2_image (zlib), FreeType (FTL), HarfBuzz, libpng, "
+             "libjpeg-turbo, zlib, bzip2, brotli, jansson (MIT), libogc, las fuentes DejaVu y los certificados raíz "
+             "de Mozilla (MPL-2.0).",
+             RL_VERSION, ajuste("url"), plat_carpeta_app());
+    parrafo(x + 18, 62, LETRA_PEQUENA, C_TEXTO, w - 36, t);
+    texto(x + 18, 418, LETRA_NORMAL, C_ACENTO, 0, "A Ver las licencias completas · B Volver");
 }
 
 /* ---------------- entrada ---------------- */
@@ -867,7 +1024,23 @@ static void entrada(unsigned p, unsigned m) {
         }
         break;
     case M_ACERCA:
-        if (p & (BOTON_A | BOTON_B)) modo = M_LISTA;
+        if (acerca_licencias) {
+            int max = lic_n > LIC_FILAS ? lic_n - LIC_FILAS : 0;
+            if (arriba) lic_primera--;
+            if (abajo) lic_primera++;
+            if (p & BOTON_IZQUIERDA) lic_primera -= LIC_FILAS;
+            if (p & BOTON_DERECHA) lic_primera += LIC_FILAS;
+            if (lic_primera > max) lic_primera = max;
+            if (lic_primera < 0) lic_primera = 0;
+            if (p & BOTON_B) acerca_licencias = 0;
+        } else {
+            if (p & BOTON_A) {
+                cargar_licencias();
+                acerca_licencias = 1;
+                lic_primera = 0;
+            }
+            if (p & BOTON_B) modo = M_LISTA;
+        }
         break;
     case M_OPCIONES:
         if (arriba) opcion_sel = (opcion_sel + n_opciones - 1) % n_opciones;
@@ -876,6 +1049,23 @@ static void entrada(unsigned p, unsigned m) {
         if (p & BOTON_B) modo = M_LISTA;
         break;
     }
+}
+
+static void avisos_de_arranque(int acceso) {
+    int nuevas = juegos_con_version_nueva();
+    if (nuevas) {
+        char t[120];
+        snprintf(t, sizeof t, "%d %s versión nueva: 1 → Actualizar juegos.", nuevas, nuevas == 1 ? "juego tiene" : "juegos tienen");
+        avisar(t, C_AMARILLO);
+    }
+    if (acceso > 0) avisar("¡Acceso a la librería aceptado!", C_ACENTO);
+    if (problema_usb && !strcmp(ajuste("juegos"), "usb")) {
+        char t[400];
+        snprintf(t, sizeof t, "%s Mientras tanto, los juegos irán a la SD.", problema_usb);
+        if (strstr(problema_usb, "FAT32") && modo == M_LISTA) dialogo("Disco USB no compatible", t);
+        else avisar(t, C_NARANJA);
+    }
+    if (acceso < 0) avisar("El administrador ha rechazado el acceso de esta Wii.", C_NARANJA);
 }
 
 int main(int argc, char **argv) {
@@ -899,36 +1089,32 @@ int main(int argc, char **argv) {
     instalar_iniciar();
     caratulas_iniciar();
     con = con_nueva();
+    ms_inicio = plat_ms();
+    SDL_Thread *hilo_act = NULL;
     if (modo != M_AVISO) {
-        pantalla_espera("Buscando actualizaciones…");
-        if (actualizacion_buscar(con, version_nueva, sizeof version_nueva) > 0) {
-            confirmar = C_ACTUALIZAR;
-            modo = M_CONFIRMAR;
-        }
-        int acceso = acceso_comprobar(con);
+        hilo_act = SDL_CreateThread(hilo_actualizacion, "actualizacion", NULL);
         cargar_catalogo();
-        int canal = canal_version_instalada();
-        if (canal >= 0 && canal_version_publicada > canal) avisar("Hay una versión nueva del canal: 1 → Actualizar el canal.", C_AMARILLO);
-        int nuevas = juegos_con_version_nueva();
-        if (nuevas) {
-            char t[120];
-            snprintf(t, sizeof t, "%d %s versión nueva: 1 → Actualizar juegos.", nuevas, nuevas == 1 ? "juego tiene" : "juegos tienen");
-            avisar(t, C_AMARILLO);
-        }
-        if (acceso > 0) avisar("¡Acceso a la librería aceptado!", C_ACENTO);
-        if (problema_usb && !strcmp(ajuste("juegos"), "usb")) {
-            char t[400];
-            snprintf(t, sizeof t, "%s Mientras tanto, los juegos irán a la SD.", problema_usb);
-            if (strstr(problema_usb, "FAT32") && modo == M_LISTA) dialogo("Disco USB no compatible", t);
-            else avisar(t, C_NARANJA);
-        }
-        if (acceso < 0) avisar("El administrador ha rechazado el acceso de esta Wii.", C_NARANJA);
     }
+    int canal_avisado = 0;
 
     while (!salir && !plat_debe_salir()) {
         unsigned p, m;
         plat_leer_botones(&p, &m);
         entrada(p, m);
+        recoger_catalogo();
+        if (actualizacion_hecha == 1 && (modo == M_LISTA || modo == M_ACERCA)) {
+            actualizacion_hecha = 2;
+            if (actualizacion_hay) {
+                snprintf(version_nueva, sizeof version_nueva, "%s", actualizacion_version);
+                confirmar = C_ACTUALIZAR;
+                modo = M_CONFIRMAR;
+            }
+        }
+        if (!canal_avisado && actualizacion_hecha && !cargando && !primera_carga) {
+            canal_avisado = 1;
+            int canal = canal_version_instalada();
+            if (canal >= 0 && canal_version_publicada > canal) avisar("Hay una versión nueva del canal: 1 → Actualizar el canal.", C_AMARILLO);
+        }
         limpiar(C_FONDO);
         dibujar_cabecera();
         dibujar_lista();
@@ -943,6 +1129,8 @@ int main(int argc, char **argv) {
         presentar();
     }
     pantalla_espera("Saliendo…");
+    if (hilo_act) SDL_WaitThread(hilo_act, NULL);
+    if (hilo_carga) SDL_WaitThread(hilo_carga, NULL);
     caratulas_parar();
     instalar_parar();
     con_liberar(con);

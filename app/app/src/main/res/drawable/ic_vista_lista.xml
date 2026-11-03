@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vista en lista: tres líneas. El color lo pone el tint del botón (ver color/icono_aspecto.xml). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,5h18v2.6H3z M3,10.7h18v2.6H3z M3,16.4h18v2.6H3z" />
+</vector>

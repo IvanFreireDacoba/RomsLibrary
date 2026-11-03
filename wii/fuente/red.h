@@ -15,6 +15,7 @@ typedef struct {
     long long longitud;       /* Content-Length, -1 si no viene */
     long long total;          /* tamaño completo (Content-Range) o la longitud */
     int parcial;              /* 206 */
+    int reintentar_en;        /* Retry-After en segundos (503: el servidor prepara el fichero), 0 si no viene */
     char ubicacion[2048];     /* Location de una redirección (3xx); las de GitHub pasan de 800 */
 } Respuesta;
 

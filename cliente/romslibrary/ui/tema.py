@@ -28,7 +28,9 @@ escala = 1.0
 
 def configurar(alto: int) -> None:
     global escala
-    escala = max(0.6, alto / 720)
+    # Como mínimo 0,75: a 480 px de alto (RG35XX SP, RG34XX) el texto sigue
+    # leyéndose bien en una pantalla de 3,5 pulgadas.
+    escala = max(0.75, alto / 720)
     _cache.clear()
 
 
@@ -83,6 +85,9 @@ def ayuda(sup, pares: list[tuple[str, str]]) -> None:
     pygame.draw.rect(sup, PANEL, (0, h - alto, w, alto))
     x = px(14)
     for boton, que in pares:
+        ancho = fuente(20, True).size(boton)[0] + px(6) + fuente(20).size(que)[0]
+        if x + ancho > w - px(8):
+            break                    # pantalla estrecha: los últimos (los menos usados) no caben
         r = texto(sup, boton, (x, h - alto + px(8)), 20, ACENTO, negrita=True)
         r2 = texto(sup, que, (r.right + px(6), h - alto + px(8)), 20, SUAVE)
         x = r2.right + px(22)

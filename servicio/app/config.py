@@ -8,6 +8,8 @@ directorio (un volumen en Docker):
     /datos/anteriores/<sha>         última versión limpia de los juegos actualizados (versiones.py)
     /datos/apk/                     APK de la app (opcional, ver ajustes de APK)
     /datos/tmp/                     temporales grandes (subidas, zips)
+    /datos/cache/switch/<sha>.nsp   Switch descomprimido para servir (LRU, comprimidos.py)
+    /datos/keys/prod.keys           claves de Switch para nsz (fuera de la imagen; comprimidos.py)
     /datos/romslibrary.db           SQLite: ajustes, federación, hashes, versiones
 """
 
@@ -24,6 +26,10 @@ def _bool(nombre: str, defecto: bool) -> bool:
 
 
 DATOS = Path(os.environ.get("ROMSLIBRARY_DATOS", "/datos"))
+
+# Versión del servicio (servicio/VERSION, copiado a la imagen junto al código).
+_ver = next((p for p in (Path(__file__).parent / "VERSION", Path(__file__).parent.parent / "VERSION") if p.is_file()), None)
+SERVICIO_VERSION = _ver.read_text(encoding="utf-8").strip() if _ver else "?"
 ROOT = DATOS / "ROMs"
 COVERS_ROOT = DATOS / "covers"
 APK_DIR = DATOS / "apk"

@@ -48,22 +48,23 @@ def _de_fuente_externa(j: catalogo.Juego, destino: Path, progreso, cancelado) ->
     return False
 
 
-def instalar(ajustes, j: catalogo.Juego, progreso=None, cancelado=None) -> None:
+def instalar(ajustes, j: catalogo.Juego, progreso=None, cancelado=None, preparando=None) -> None:
+    """preparando(): el servidor está preparando el fichero (Switch comprimido)."""
     destino = catalogo.ruta_local(ajustes, j)
     destino.parent.mkdir(parents=True, exist_ok=True)
     clave = j.clave(ajustes["clave"])
     if j.sistema == "rpgmaker":
         _instalar_zip(ajustes, j, destino, clave, progreso, cancelado)
     elif j.es_grupo:
-        _instalar_grupo(ajustes, j, destino, clave, progreso, cancelado)
+        _instalar_grupo(ajustes, j, destino, clave, progreso, cancelado, preparando)
     else:
         parcial = destino.with_name(destino.name + ".descargando")
         if not _de_fuente_externa(j, parcial, progreso, cancelado):
-            api.descargar(_url_descarga(ajustes, j), str(parcial), clave, progreso, cancelado)
+            api.descargar(_url_descarga(ajustes, j), str(parcial), clave, progreso, cancelado, preparando=preparando)
         os.replace(parcial, destino)
 
 
-def _instalar_grupo(ajustes, j, destino: Path, clave, progreso, cancelado) -> None:
+def _instalar_grupo(ajustes, j, destino: Path, clave, progreso, cancelado, preparando=None) -> None:
     base = j.base(ajustes["url"])
     ficheros = api.get_json(api.url_de(base, "grupo_ficheros", system=j.sistema, grupo=j.fichero), clave)
     total = sum(int(f.get("tamano") or 0) for f in ficheros) or -1
@@ -80,7 +81,8 @@ def _instalar_grupo(ajustes, j, destino: Path, clave, progreso, cancelado) -> No
             local.parent.mkdir(parents=True, exist_ok=True)
             url = api.url_de(base, "grupo_fichero", system=j.sistema, grupo=j.fichero, fichero=f["nombre"])
             api.descargar(url, str(local), clave,
-                          (lambda h, t, a=hecho_antes: progreso(a + h, total)) if progreso else None, cancelado)
+                          (lambda h, t, a=hecho_antes: progreso(a + h, total)) if progreso else None, cancelado,
+                          preparando=preparando)
             hecho_antes += int(f.get("tamano") or 0)
     except BaseException:
         shutil.rmtree(destino, ignore_errors=True)

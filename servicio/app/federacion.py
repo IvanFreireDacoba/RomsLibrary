@@ -42,6 +42,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
 
 import ajustes
+import comprimidos
+import metacache
 import config
 import externos
 import linaje
@@ -89,8 +91,12 @@ def inicializar() -> None:
 # Hashes de los juegos propios (en segundo plano, cacheados por tamaño+mtime)
 # =====================================================================
 
-def _firma(ruta: Path) -> tuple[int, float]:
+def _firma(ruta: Path, fresca: bool = False) -> tuple[int, float]:
+    """fresca=False (peticiones): la de metacache, al instante. fresca=True
+    (hilo de hashes): recorriendo el disco, y de paso se refresca la caché."""
     if ruta.is_dir():
+        if not fresca:
+            return metacache.firma(ruta)
         ficheros = [p for p in ruta.rglob("*") if p.is_file() and p.name != "grupo.json"]
         return sum(p.stat().st_size for p in ficheros), max((p.stat().st_mtime for p in ficheros), default=0)
     st = ruta.stat()
@@ -106,18 +112,21 @@ def _sha_fichero(ruta: Path) -> str:
 
 
 def _sha_juego(ruta: Path) -> str:
+    """Con los nombres y SHA LÓGICOS: un «X.nsz» cuenta como el «X.nsp» que
+    sale al descomprimirlo, así comprimir no cambia la identidad del juego.
+    comprimidos.SinVerificar si aún no se sabe qué hay dentro de alguno."""
     if ruta.is_file():
         return _sha_fichero(ruta)
-    lineas = sorted(f"{p.relative_to(ruta).as_posix()}:{_sha_fichero(p)}"
-                    for p in ruta.rglob("*") if p.is_file() and p.name != "grupo.json")
+    lineas = sorted(f"{nombre}:{comprimidos.sha_logico(p) if comprimidos.es_comprimido(p) else _sha_fichero(p)}"
+                    for nombre, p in comprimidos.ficheros_logicos(ruta) if Path(nombre).name != "grupo.json")
     return hashlib.sha256("\n".join(lineas).encode()).hexdigest()
 
 
-def sha_conocido(sistema: str, nombre: str) -> str | None:
+def sha_conocido(sistema: str, nombre: str, fresca: bool = False) -> str | None:
     ruta = config.ROOT / sistema / nombre
     if not ruta.exists():
         return None
-    tamano, mtime = _firma(ruta)
+    tamano, mtime = _firma(ruta, fresca)
     with _conectar() as con:
         fila = con.execute("SELECT * FROM hashes WHERE ruta = ?", (f"{sistema}/{nombre}",)).fetchone()
     if fila and fila["tamano"] == tamano and abs(fila["mtime"] - mtime) < 1:
@@ -133,17 +142,23 @@ def _calcular_hashes_pendientes() -> None:
                 continue
             clave = f"{carpeta_sistema.name}/{juego.name}"
             vistos.add(clave)
-            sha = sha_conocido(carpeta_sistema.name, juego.name)
             try:
-                tamano, mtime = _firma(juego)
+                sha = sha_conocido(carpeta_sistema.name, juego.name, fresca=True)
+                tamano, mtime = _firma(juego, fresca=True)
+                if juego.is_dir():
+                    metacache.calcular(juego)
                 if not sha:
                     sha = _sha_juego(juego)
                     with _conectar() as con:
                         con.execute("INSERT OR REPLACE INTO hashes (ruta, tamano, mtime, sha) VALUES (?, ?, ?, ?)",
                                     (clave, tamano, mtime, sha))
+                if juego.is_dir():
+                    # Tamaño de lo que se descarga (descomprimido), sin grupo.json, como hasta ahora.
+                    tamano = sum(comprimidos.tamano_logico(p) for n, p in comprimidos.ficheros_logicos(juego)
+                                 if Path(n).name != "grupo.json")
                 versiones.registrar(carpeta_sistema.name, juego.name, sha, tamano)
-            except OSError:
-                continue  # se está subiendo o borrando justo ahora; en la próxima vuelta
+            except (OSError, comprimidos.SinVerificar):
+                continue  # se está subiendo, borrando o verificando justo ahora; en la próxima vuelta
     with _conectar() as con:
         for fila in con.execute("SELECT ruta FROM hashes").fetchall():
             if fila["ruta"] not in vistos:
@@ -387,6 +402,7 @@ def juegos_propios(sistema: str | None = None, texto: str | None = None, servir:
         j["etiqueta"] = (c["etiqueta"] if c and cadena else None) or (f"v{j['version']}" if j["version"] else None)
         j["anteriores"] = [[s, t] for s, t in cadena[:-1]]
         j["codigo"] = c["codigo"] if c else None
+        j["fecha"] = _fecha_novedad(j["system"], j["filename"], c if cadena else None)
         e = enlaces.get(f"{j['system']}/{j['filename']}")
         # Descarga preferente desde la web del autor (ver externos.py).
         j["fuenteExterna"] = e["url"] if e else None
@@ -416,6 +432,22 @@ def juegos_propios(sistema: str | None = None, texto: str | None = None, servir:
     if not completo:
         juegos = [j for j in juegos if j["compartido"]]
     return juegos
+
+
+def _fecha_novedad(sistema: str, nombre: str, cadena: dict | None) -> float | None:
+    """Para ordenar por «más nuevos» en la app: lo más reciente entre la
+    subida y el último update (epoch, segundos). La subida es lo más antiguo
+    entre la primera versión registrada y la fecha del fichero (los juegos
+    anteriores al versionado se registraron todos de golpe; y comprimir o
+    tocar el fichero luego no lo hace «nuevo»). None si no se sabe."""
+    try:
+        mtime = (config.ROOT / sistema / nombre).stat().st_mtime
+    except OSError:
+        mtime = None
+    creado = cadena["creado"] if cadena else None
+    subida = min((f for f in (creado, mtime) if f), default=None)
+    actualizado = cadena["actualizado"] if cadena else None
+    return max((f for f in (subida, actualizado) if f), default=None)
 
 
 def es_compartido(sistema: str, nombre: str) -> bool:
@@ -448,7 +480,9 @@ def fichero_limpio(sistema: str, nombre: str) -> Path | None:
 async def red(servir: bool = True, completo: bool = True) -> tuple[list[dict], list[dict], list[list[dict]], linaje.Linaje]:
     """Juegos propios, librerías públicas, sus catálogos y el linaje de
     versiones que sale de todo ello (ver linaje.py)."""
-    propios = juegos_propios(servir=servir, completo=completo)
+    # En un hilo: recorre el disco y la base de datos, y no puede parar el
+    # bucle de eventos (pararía TODAS las peticiones, también las ligeras).
+    propios = await asyncio.to_thread(juegos_propios, servir=servir, completo=completo)
     servicios = await otras_librerias()
     catalogos = await asyncio.gather(*(catalogo_de(s) for s in servicios))
     lin = linaje.Linaje()
@@ -469,9 +503,11 @@ async def juegos_listado(sistema: str | None, texto: str | None, libreria: str, 
     """libreria: "personal" | "otras" | "todas". Sin duplicados por SHA y,
     de otras librerías, sin versiones que se sabe que están superadas."""
     if libreria == "personal":
-        return juegos_propios(sistema, texto, servir, completo)
+        return await asyncio.to_thread(juegos_propios, sistema, texto, servir, completo)
     todos, servicios, catalogos, lin = await red(servir, completo)
-    propios = juegos_propios(sistema, texto, servir, completo) if libreria == "todas" else []
+    # Los propios ya vienen en `todos`: se filtran aquí en vez de listarlos otra vez.
+    propios = [j for j in todos if (not sistema or j["system"] == sistema)
+               and (not texto or texto.lower() in j["filename"].lower())] if libreria == "todas" else []
     for j in propios:
         # Una librería de confianza tiene una versión más nueva de este juego.
         j["hayVersionNueva"] = bool(j["sha"] and lin.superada(j["sha"]))
@@ -600,7 +636,7 @@ async def catalogo(request: Request):
     return [{k: j[k] for k in ("system", "filename", "sizeBytes", "coverUrl", "esGrupo", "tipoGrupo", "roles", "sha",
                                "version", "anteriores", "codigo", "fuenteExterna", "shaEnlace", "paginaAutor",
                                "titulo", "idiomas", "corrupto", "motivoCorrupto", "corruptoAutomatico",
-                               "base", "baseDetalle")}
+                               "base", "baseDetalle", "fecha")}
             for j in juegos_propios(completo=False) if j["descargable"]]
 
 
@@ -623,7 +659,9 @@ async def juego(request: Request):
     if accion == "grupo_ficheros":
         return nucleo.ficheros_de_grupo(I, T, system=q["system"], grupo=q["grupo"])
     if accion == "grupo_fichero":
-        return nucleo.fichero_de_grupo(I, T, system=q["system"], grupo=q["grupo"], fichero=q["fichero"])
+        # Las otras librerías esperan hasta 300 s: se les da más margen si hay que descomprimir.
+        return await asyncio.to_thread(nucleo.servir_fichero_de_grupo, q["system"], q["grupo"], q["fichero"],
+                                       comprimidos.ESPERA_FEDERACION)
     if accion == "caratula":
         return nucleo.servir_caratula(q["system"], q["filename"], I, T)
     raise HTTPException(status_code=404, detail="Acción desconocida.")
@@ -703,9 +741,19 @@ async def _copiar(copia_id: int, servicio: dict, sistema: str, juego_remoto: dic
                     if not str(destino.resolve()).startswith(str(carpeta.resolve())):
                         raise RuntimeError("Ruta insegura en el grupo remoto")
                     destino.parent.mkdir(parents=True, exist_ok=True)
-                    async with cliente.stream("GET", url, params={
-                            "accion": "grupo_fichero", "system": sistema, "grupo": juego_remoto["filename"],
-                            "fichero": f["nombre"]}, headers=cabecera) as resp:
+                    params = {"accion": "grupo_fichero", "system": sistema, "grupo": juego_remoto["filename"],
+                              "fichero": f["nombre"]}
+                    # 503 + Retry-After: la otra librería lo está descomprimiendo (Switch
+                    # guardado como .nsz/.xcz, ver comprimidos.py). Se espera hasta 1 h.
+                    for _ in range(240):
+                        async with cliente.stream("GET", url, params=params, headers=cabecera) as resp:
+                            if resp.status_code != 503:
+                                break
+                        try:
+                            await asyncio.sleep(min(60, max(5, int(resp.headers.get("retry-after", "15")))))
+                        except ValueError:
+                            await asyncio.sleep(15)
+                    async with cliente.stream("GET", url, params=params, headers=cabecera) as resp:
                         resp.raise_for_status()
                         with open(destino, "wb") as salida:
                             async for trozo in resp.aiter_bytes(1024 * 1024):

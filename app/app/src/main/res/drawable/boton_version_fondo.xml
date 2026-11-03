@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Botones del apartado «Versión»: gris oscuro; con el foco del mando,
+     verde fósforo con borde blanco (como «Buscar») para que se vea siempre. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#7bffb0" />
+            <stroke android:width="2dp" android:color="#ffffff" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#1f7a45" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#2a3138" />
+            <stroke android:width="1dp" android:color="#46505a" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+</selector>
