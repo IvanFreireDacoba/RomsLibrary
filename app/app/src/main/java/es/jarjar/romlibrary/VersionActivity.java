@@ -11,6 +11,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import org.json.JSONObject;
@@ -61,6 +62,31 @@ public class VersionActivity extends BaseActivity {
         textoServicio.setTextColor(Color.parseColor("#b0bac4"));
         textoServicio.setPadding(0, dp(4), 0, dp(12));
         raiz.addView(textoServicio);
+
+        // ---- Ajuste del reinicio de ES-DE (ver RefrescoEsDe) ----
+        if (RefrescoEsDe.esDeInstalado(this)) {
+            seccion(raiz, "ES-DE");
+            Switch interruptor = new Switch(this);
+            interruptor.setText("Reiniciar ES-DE al terminar las descargas");
+            interruptor.setTextSize(17);
+            interruptor.setTextColor(Color.WHITE);
+            interruptor.setPadding(dp(16), dp(10), dp(16), dp(10));
+            interruptor.setBackgroundResource(R.drawable.boton_version_fondo);
+            interruptor.setFocusable(true);
+            interruptor.setChecked(RefrescoEsDe.automatico(this));
+            interruptor.setOnCheckedChangeListener((b, marcado) -> RefrescoEsDe.setAutomatico(this, marcado));
+            LinearLayout.LayoutParams lpSw = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            lpSw.topMargin = dp(6);
+            raiz.addView(interruptor, lpSw);
+            TextView ayuda = new TextView(this);
+            ayuda.setText("Al acabar la cola, deja una señal para que la consola reinicie ES-DE y vea los juegos "
+                    + "nuevos. La reinicia un vigilante del dispositivo; la app no la reinicia sola.");
+            ayuda.setTextSize(13);
+            ayuda.setTextColor(Color.parseColor("#8fa0b0"));
+            ayuda.setPadding(dp(4), dp(4), dp(4), 0);
+            raiz.addView(ayuda);
+        }
 
         seccion(raiz, "Condiciones y políticas");
         Button primero = boton(raiz, "Términos y condiciones de uso",

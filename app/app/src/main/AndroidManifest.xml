@@ -9,10 +9,6 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
-    <!-- Para poder pedirle a Tasker (net.dinglisch.android.tasker.ACTION_TASK)
-         que ejecute la Task de refresco de ES-DE, ver TaskerBridge. -->
-    <uses-permission android:name="net.dinglisch.android.tasker.PERMISSION_RUN_TASKS" />
-
     <!-- Acceso a todo el almacenamiento (autorizado explícitamente por el
          usuario): hace falta para poder copiar la carátula dentro de
          ES-DE/downloaded_media/<sistema>/covers/, que es una carpeta hermana
@@ -31,7 +27,6 @@
     <queries>
         <package android:name="org.es_de.frontend" />
         <package android:name="org.es_de.frontend.galaxy" />
-        <package android:name="net.dinglisch.android.taskerm" />
         <!-- Las apps con icono en el lanzador: son las que ES-DE lista en
              androidapps/androidgames/emulators, y EsDeIconos usa su icono. -->
         <intent>

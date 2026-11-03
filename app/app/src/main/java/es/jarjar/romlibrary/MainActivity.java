@@ -111,6 +111,8 @@ public class MainActivity extends BaseActivity {
     // espera en vez de quedarse bloqueado en la interfaz.
     private final java.util.ArrayDeque<Juego> colaDescargas = new java.util.ArrayDeque<>();
     private boolean descargaEnCurso = false;
+    /** Hubo cambios en los ficheros de ROMs en esta tanda que ES-DE debe releer (ver RefrescoEsDe). */
+    private boolean cambiosEsDePendientes = false;
 
 
     // ---------- Scroll suave con el stick derecho del mando ----------
@@ -1777,7 +1779,28 @@ public class MainActivity extends BaseActivity {
         } else {
             // Cola vacía: ya no hace falta mantener el proceso vivo en segundo plano.
             DescargaService.detener(this);
+            finalizarTandaEsDe();
         }
+    }
+
+    /**
+     * Al vaciarse la cola, si algún juego se instaló (o se borró) en esta
+     * tanda, se deja la bandera para que el vigilante del dispositivo reinicie
+     * ES-DE (ver RefrescoEsDe). La app NO reinicia ES-DE: solo deja la señal.
+     */
+    private void finalizarTandaEsDe() {
+        if (!cambiosEsDePendientes) {
+            return;
+        }
+        cambiosEsDePendientes = false;
+        Context ctx = getApplicationContext();
+        new Thread(() -> {
+            String ruta = RefrescoEsDe.marcarAutomatico(ctx);
+            if (ruta != null) {
+                runOnUiThread(() -> Toast.makeText(this,
+                        "ES-DE se actualizará en unos segundos.", Toast.LENGTH_SHORT).show());
+            }
+        }, "bandera-esde").start();
     }
 
     private void eliminarCopiaLocal(Juego juego) {
@@ -1822,6 +1845,9 @@ public class MainActivity extends BaseActivity {
                     refrescarAdaptadores();
                     borrarCaratulaDeESDE(juego);
                     Toast.makeText(this, "Copia local eliminada", Toast.LENGTH_SHORT).show();
+                    // Un juego menos que ES-DE debe dejar de mostrar.
+                    Context ctxBorrado = getApplicationContext();
+                    new Thread(() -> RefrescoEsDe.marcarAutomatico(ctxBorrado), "bandera-esde").start();
                 }
             });
         }).start();
@@ -1930,9 +1956,11 @@ public class MainActivity extends BaseActivity {
                         textoEstado.setText(mensajeInstalado);
                         Toast.makeText(this, avisoEdenPendiente ? "Descargado -- revisa el aviso de Eden" : "Descargado",
                                 avisoEdenPendiente ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT).show();
-                        procesarSiguienteEnCola();
+                        // Cambio que ES-DE debe releer: la bandera se deja al
+                        // vaciarse la cola (finalizarTandaEsDe), no por cada juego.
+                        cambiosEsDePendientes = true;
                         refrescarAdaptadores();
-                        intentarRefrescarESDE(juego);
+                        procesarSiguienteEnCola();
                     }));
                 }
             } catch (Exception e) {
@@ -2235,58 +2263,27 @@ public class MainActivity extends BaseActivity {
         }).start();
     }
 
-    // ---------- Refresco de ES-DE tras instalar ----------
+    // ---------- Refresco de ES-DE: solo dejamos una bandera ----------
 
     /**
-     * Tras instalar un juego, ES-DE tiene que rescanear para que aparezca:
-     * se pide a Tasker el cierre forzoso + relanzamiento de ES-DE (ver
-     * TaskerBridge; un simple startActivity no basta si ES-DE ya estaba en
-     * marcha). De forma OPORTUNISTA y silenciosa: el puente de Tasker solo
-     * funciona con la VPN conectada, que lo normal es que no lo esté justo
-     * tras instalar, así que avisar en cada descarga sería ruido; siempre
-     * queda "Reiniciar ES-DE" en el menú. La descarga NUNCA se marca como
-     * fallida por esto. (Shizuku se descartó del todo en este proyecto.)
-     */
-    private void intentarRefrescarESDE(Juego juego) {
-        if (getPackageManager().getLaunchIntentForPackage("org.es_de.frontend") == null
-                && getPackageManager().getLaunchIntentForPackage("org.es_de.frontend.galaxy") == null) {
-            Toast.makeText(this, "Descarga completada.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (TaskerBridge.solicitarRefrescoEsDe(this) == TaskerBridge.Resultado.SOLICITADO) {
-            Toast.makeText(this, "Descarga completada. Actualizando ES-DE vía Tasker…", Toast.LENGTH_SHORT).show();
-        } else {
-            Toast.makeText(this, "Descargado. Usa \"Reiniciar ES-DE\" en el menú si no aparece.", Toast.LENGTH_LONG).show();
-        }
-    }
-
-    /**
-     * Acción manual del menú -- pide a Tasker (vía broadcast, ver
-     * TaskerBridge) que ejecute el force-stop + relanzamiento real de ES-DE
-     * a través del puente adb que Tasker levanta bajo demanda. Sustituye al
-     * antiguo "solo traer al frente" (que no garantizaba un rescan si ES-DE
-     * ya estaba en segundo plano) ahora que existe una vía real sin Shizuku.
-     * Como el broadcast es asíncrono y Tasker no devuelve confirmación,
-     * el mensaje deja claro que se ha PEDIDO, no que ya esté hecho -- y si
-     * el puente no puede estar disponible (Tasker no instalado o VPN
-     * desconectada) se dice con honestidad en vez de fallar en silencio.
+     * Acción manual del menú «Reiniciar ES-DE». La app NO puede reiniciar ES-DE
+     * (force-stop de otra app = root/Shizuku, descartados): deja la bandera que
+     * el vigilante del dispositivo (Termux/Tasker sobre el canal adb local
+     * permanente 127.0.0.1:5555) consume para hacer el force-stop + relanzar
+     * (ver RefrescoEsDe y docs/gamenative-esde-retroid.md). Fuerza la bandera
+     * aunque el reinicio automático esté desactivado: es una orden explícita.
      */
     private void reiniciarEsDeManual() {
-        TaskerBridge.Resultado resultado = TaskerBridge.solicitarRefrescoEsDe(this);
-        switch (resultado) {
-            case SOLICITADO:
-                Toast.makeText(this, "Pedido a Tasker refrescar ES-DE (puede tardar unos segundos).",
-                        Toast.LENGTH_LONG).show();
-                break;
-            case TASKER_NO_INSTALADO:
-                Toast.makeText(this, "Tasker no está instalado -- no se puede refrescar ES-DE de esta forma.",
-                        Toast.LENGTH_LONG).show();
-                break;
-            case VPN_NO_CONECTADA:
-            default:
-                Toast.makeText(this, "La VPN de Tailscale no está conectada -- conéctala primero para que "
-                        + "el puente esté disponible, luego vuelve a intentarlo.", Toast.LENGTH_LONG).show();
-                break;
+        if (!RefrescoEsDe.esDeInstalado(this)) {
+            Toast.makeText(this, "ES-DE no está instalado en esta consola.", Toast.LENGTH_LONG).show();
+            return;
         }
+        new Thread(() -> {
+            String ruta = RefrescoEsDe.marcarForzado();
+            runOnUiThread(() -> Toast.makeText(this, ruta != null
+                    ? "Marcado: la consola reiniciará ES-DE en unos segundos."
+                    : "No se pudo dejar la señal: da «Acceso a todos los archivos» a la app en Ajustes.",
+                    Toast.LENGTH_LONG).show());
+        }, "bandera-esde").start();
     }
 }
