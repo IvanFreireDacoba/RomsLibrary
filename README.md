@@ -1,3 +1,5 @@
+AVISO: HAY GENTE SOLICITANDO ACCESO A MI LIBRERÍA PRIVADA EN SUND.ES, POR FAVOR PONEROS EN CONTACTO CONMIGO EN TWITTER @F_De_Ivan
+
 # RomsLibrary
 
 Un sistema para **ordenar y mantener tu propia librería de juegos** en tu
