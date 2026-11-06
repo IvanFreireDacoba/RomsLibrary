@@ -1,6 +1,6 @@
-AVISO: HAY GENTE SOLICITANDO ACCESO A MI LIBRERÍA PRIVADA EN SUND.ES, POR FAVOR PONEROS EN CONTACTO CONMIGO EN TWITTER @F_De_Ivan
-
 # RomsLibrary
+
+<img src="romslibrary-icon.png" alt="RomsLibrary" width="128" align="right">
 
 Un sistema para **ordenar y mantener tu propia librería de juegos** en tu
 servidor, con apps para llevarlos a tus consolas (Android; Linux, Steam Deck y

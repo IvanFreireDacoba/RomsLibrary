@@ -750,10 +750,15 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     <option value="gbc">GameBoy Color</option>
                     <option value="gba">GameBoy Advance</option>
                     <option value="nds">Nintendo DS</option>
+                    <option value="nes">NES</option>
+                    <option value="snes">Super Nintendo</option>
                     <option value="n64">N64</option>
                     <option value="gc">GameCube</option>
                     <option value="wii">Wii</option>
                     <option value="switch">Switch</option>
+                    <option value="megadrive">Mega Drive</option>
+                    <option value="pcengine">PC Engine</option>
+                    <option value="c64">Commodore 64</option>
                     <option value="psx">PlayStation</option>
                     <option value="ps2">PlayStation 2</option>
                     <option value="psp">PSP</option>
@@ -904,10 +909,16 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                         <option value="gb">GameBoy</option>
                         <option value="gbc">GameBoy Color</option>
                         <option value="gba">GameBoy Advance</option>
+                        <option value="nds">Nintendo DS</option>
+                        <option value="nes">NES</option>
+                        <option value="snes">Super Nintendo</option>
                         <option value="n64">N64</option>
                         <option value="gc">GameCube</option>
                         <option value="wii">Wii</option>
                         <option value="switch">Switch</option>
+                        <option value="megadrive">Mega Drive</option>
+                        <option value="pcengine">PC Engine</option>
+                        <option value="c64">Commodore 64</option>
                         <option value="psx">PlayStation</option>
                         <option value="ps2">PlayStation 2</option>
                         <option value="psp">PSP</option>
@@ -1538,6 +1549,41 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             });
         }
 
+        const RL_NOMBRES_SISTEMA = {
+            gb: 'GameBoy', gbc: 'GameBoy Color', gba: 'GameBoy Advance', nds: 'Nintendo DS',
+            nes: 'NES', snes: 'Super Nintendo', n64: 'N64', gc: 'GameCube', wii: 'Wii',
+            switch: 'Switch', megadrive: 'Mega Drive', pcengine: 'PC Engine', c64: 'Commodore 64',
+            psx: 'PlayStation', ps2: 'PlayStation 2', psp: 'PSP', rpgmaker: 'RPG Maker (Kirin)'
+        };
+
+        // Rellena el filtro de consolas con «Nombre (nº de juegos)» y «Todas las consolas (total)»,
+        // dinámico de la librería (incluye sistemas nuevos). El conteo se alinea a la derecha con
+        // espacios duros hasta la columna del nombre más largo.
+        async function poblarFiltroSistemas() {
+            const sel = document.getElementById('rl-filtro-sistema');
+            let juegos = [];
+            try {
+                const resp = await rlFetch('api/juegos?' + new URLSearchParams({ libreria: 'personal' }));
+                const data = await resp.json();
+                juegos = data.data || [];
+            } catch (e) { return; }
+            const cuenta = {};
+            juegos.forEach((j) => { const s = j.system || j.sistema; if (s) cuenta[s] = (cuenta[s] || 0) + 1; });
+            const sistemas = Object.keys(cuenta).sort((a, b) =>
+                (RL_NOMBRES_SISTEMA[a] || a).localeCompare(RL_NOMBRES_SISTEMA[b] || b));
+            const anchoTodas = 'Todas las consolas'.length;
+            const ancho = Math.max(anchoTodas, ...sistemas.map((s) => (RL_NOMBRES_SISTEMA[s] || s).length));
+            const pad = (nombre) => nombre + ' '.repeat(Math.max(1, ancho - nombre.length + 2));
+            const actual = sel.value;
+            let html = '<option value="">' + pad('Todas las consolas') + '(' + juegos.length + ')</option>';
+            sistemas.forEach((s) => {
+                const nombre = RL_NOMBRES_SISTEMA[s] || s;
+                html += '<option value="' + s + '">' + rlEscapar(pad(nombre)) + '(' + cuenta[s] + ')</option>';
+            });
+            sel.innerHTML = html;
+            sel.value = actual;
+        }
+
         async function rlCargarJuegos() {
             const grid = document.getElementById('rl-grid');
             const sistema = document.getElementById('rl-filtro-sistema').value;
@@ -1895,7 +1941,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             cont.innerHTML = (pendientes.length ? '<strong>Consolas que piden acceso a toda la librería</strong>'
                 + '<p class="rl-ayuda">Al aceptar, esa consola verá y descargará también los juegos «solo para mí». Da acceso solo a tus consolas: dar a otras personas juegos que no tienes derecho a compartir es distribuirlos, aunque sean pocas.</p>'
                 + pendientes.map((a) => fila(a, [['aceptar', 'Aceptar'], ['rechazar', 'Rechazar'], ['renombrar', 'Cambiar nombre']])).join('') : '')
-                + (aceptadas.length ? '<details' + (pendientes.length ? '' : ' open') + '><summary>Consolas con acceso (' + aceptadas.length + ')</summary>'
+                + (aceptadas.length ? '<details><summary>Consolas con acceso (' + aceptadas.length + ')</summary>'
                 + aceptadas.map((a) => fila(a, [['renombrar', 'Cambiar nombre'], ['revocar', 'Quitar acceso']])).join('') + '</details>' : '');
             cont.querySelectorAll('button[data-id]').forEach((b) => b.addEventListener('click', async () => {
                 if (b.dataset.accion === 'revocar' && !confirm('¿Quitar el acceso a esta consola?')) return;
@@ -2365,6 +2411,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             window.rlFiltroTimeout = setTimeout(rlCargarJuegos, 250);
         });
 
+        poblarFiltroSistemas();
         rlCargarJuegos();
     </script>
 

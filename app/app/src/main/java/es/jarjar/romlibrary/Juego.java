@@ -52,6 +52,9 @@ final class Juego {
     // para el orden «Más nuevos/Más viejos». 0 = la librería no lo manda.
     double fecha;
     boolean instaladoLocal;
+    // Port recompilado a nativo (nx2android): lo instala/actualiza jarjar por adb,
+    // no se descarga como ROM desde la app. Solo informa + distintivo en la ficha.
+    boolean nativo;
     boolean descargando; // estado de UI puro (no viene del servidor): sustituye el botón por una barra de progreso.
     boolean enCola; // esperando su turno en la cola de descargas (ver MainActivity.solicitarDescarga).
     volatile long bytesDescargados;

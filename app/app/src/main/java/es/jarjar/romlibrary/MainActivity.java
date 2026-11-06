@@ -1412,6 +1412,7 @@ public class MainActivity extends BaseActivity {
                     roles == null ? 0 : roles.optInt("base", 0),
                     roles == null ? 0 : roles.optInt("update", 0),
                     roles == null ? 0 : roles.optInt("dlc", 0));
+            juego.nativo = o.optBoolean("nativo", false);
             juego.origen = o.isNull("origen") || !o.has("origen") ? null : o.getString("origen");
             if (juego.origen != null) {
                 // Juego de otra librería: solo por https y con la carátula en
@@ -1632,6 +1633,16 @@ public class MainActivity extends BaseActivity {
     };
 
     private void onAccionInstalarDesinstalar(Juego juego) {
+        if (juego.nativo) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Juego nativo")
+                    .setMessage("«" + juego.nombreMostrado() + "» es un port nativo (nx2android). Lo instala y "
+                            + "actualiza jarjar automáticamente por adb cuando la consola está conectada; no se "
+                            + "descarga como ROM desde aquí.")
+                    .setPositiveButton("Vale", null)
+                    .show();
+            return;
+        }
         if (juego.instaladoLocal) {
             eliminarCopiaLocal(juego);
         } else if (!juego.descargable) {

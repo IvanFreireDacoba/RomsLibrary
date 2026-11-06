@@ -87,6 +87,12 @@ class App:
             pygame.display.init()
         pygame.key.set_repeat(300, 45)
         pygame.display.set_caption("RomsLibrary")
+        try:
+            _icono = _RECURSOS / "icono.png"
+            if _icono.is_file():
+                pygame.display.set_icon(pygame.image.load(str(_icono)))
+        except Exception:  # noqa: BLE001 -- el icono es cosmético, que no tumbe el arranque
+            pass
         info = pygame.display.Info()
         tamano_prueba = os.environ.get("RL_TAMANO")
         if tamano_prueba:

@@ -31,6 +31,10 @@ DATOS = Path(os.environ.get("ROMSLIBRARY_DATOS", "/datos"))
 _ver = next((p for p in (Path(__file__).parent / "VERSION", Path(__file__).parent.parent / "VERSION") if p.is_file()), None)
 SERVICIO_VERSION = _ver.read_text(encoding="utf-8").strip() if _ver else "?"
 ROOT = DATOS / "ROMs"
+# Ports nativos (nx2android): <sistema>/<Nombre>.zip (APK+data) + sidecar
+# <Nombre>.json (title_id, package, version, cover) + <Nombre>.<img>. Se listan
+# junto a los ROMs emulados, marcados "nativo"; la app descarga el zip e instala.
+NATIVOS_ROOT = DATOS / "nativos"
 COVERS_ROOT = DATOS / "covers"
 APK_DIR = DATOS / "apk"
 TMP = DATOS / "tmp"

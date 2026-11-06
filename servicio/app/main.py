@@ -76,6 +76,7 @@ def guardar_caratula(contenido: bytes, carpeta_caratulas: Path, stem: str) -> st
 
 
 ROOT = config.ROOT
+NATIVOS_ROOT = config.NATIVOS_ROOT
 COVERS_ROOT = config.COVERS_ROOT
 APK_PATH = config.APK_PATH
 EXTENSIONES_CARATULA_PERMITIDAS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -89,6 +90,11 @@ EXTENSIONES_POR_SISTEMA = {
     "gbc": {".gbc", ".zip"},
     "gba": {".gba", ".zip"},
     "nds": {".nds", ".zip"},
+    "nes": {".nes", ".fds", ".unf", ".zip"},
+    "snes": {".sfc", ".smc", ".zip"},
+    "megadrive": {".md", ".gen", ".smd", ".bin", ".zip"},
+    "pcengine": {".pce", ".sgx", ".zip"},
+    "c64": {".d64", ".t64", ".crt", ".prg", ".g64", ".zip"},
     "n64": {".n64", ".z64", ".v64", ".zip"},
     "gc": {".iso", ".gcm", ".rvz", ".zip"},
     # Wii (USB Loader GX): .wbfs o .iso. Un .wbfs de más de 4 GB va partido
@@ -252,19 +258,60 @@ def buscar_caratula(sistema: str, nombre_rom: str) -> Optional[str]:
     return None
 
 
+def _sistemas_con_nativos() -> set[str]:
+    if not NATIVOS_ROOT.is_dir():
+        return set()
+    return {c.name for c in NATIVOS_ROOT.iterdir() if c.is_dir()}
+
+
+def _nativos_de(sistema: str) -> list[dict]:
+    """Juegos ya recompilados a nativo (nx2android) de un sistema, leídos de sus
+    sidecars nativos/<sistema>/<Nombre>.json. Se listan junto a los emulados,
+    marcados «nativo»: la app descarga el .zip (APK+data) e instala en vez de emular."""
+    carpeta = NATIVOS_ROOT / sistema
+    if not carpeta.is_dir():
+        return []
+    res = []
+    for side in sorted(carpeta.glob("*.json")):
+        try:
+            d = json.loads(side.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        zip_name = d.get("zip") or (side.stem + ".zip")
+        if not (carpeta / zip_name).is_file():
+            continue
+        nombre = d.get("name", side.stem)
+        caratula = buscar_caratula(sistema, nombre) or buscar_caratula(sistema, side.stem)
+        res.append({
+            "system": sistema,
+            "filename": nombre,
+            "sizeBytes": (carpeta / zip_name).stat().st_size,
+            "coverUrl": f"/api/cover/{sistema}/{caratula}" if caratula else None,
+            "esGrupo": False,
+            "tipoGrupo": "nativo",
+            "roles": None,
+            "nativo": True,
+            "titleId": d.get("title_id"),
+            "package": d.get("package"),
+            "version": d.get("version"),
+            "zip": zip_name,
+        })
+    return res
+
+
 @app.get("/api/systems")
 def listar_sistemas(request: Request, token: str | None = Query(default=None)):
     exigir_token(request, token)
-    if not ROOT.is_dir():
-        return JSONResponse([])
-    sistemas = []
-    for carpeta in sorted(ROOT.iterdir()):
-        if carpeta.is_dir():
-            # Un juego multi-fichero (PS1 cue+bin, multidisco...) vive en su
-            # propia subcarpeta y cuenta como 1 solo juego, no 1 por fichero.
-            n_juegos = sum(1 for f in carpeta.iterdir() if f.is_file() or f.is_dir())
-            sistemas.append({"sistema": carpeta.name, "juegos": n_juegos})
-    return sistemas
+    conteo: dict[str, int] = {}
+    if ROOT.is_dir():
+        for carpeta in sorted(ROOT.iterdir()):
+            if carpeta.is_dir():
+                # Un juego multi-fichero (PS1 cue+bin, multidisco...) vive en su
+                # propia subcarpeta y cuenta como 1 solo juego, no 1 por fichero.
+                conteo[carpeta.name] = sum(1 for f in carpeta.iterdir() if f.is_file() or f.is_dir())
+    for sis in _sistemas_con_nativos():
+        conteo[sis] = conteo.get(sis, 0) + len(_nativos_de(sis))
+    return [{"sistema": s, "juegos": n} for s, n in sorted(conteo.items())]
 
 
 @app.get("/api/systems/{sistema}")
@@ -272,12 +319,17 @@ def listar_juegos(sistema: str, request: Request, token: str | None = Query(defa
     exigir_token(request, token)
     sistema = nombre_seguro(sistema)
     carpeta = (ROOT / sistema).resolve()
-    if not str(carpeta).startswith(str(ROOT.resolve())) or not carpeta.is_dir():
+    nativos = _nativos_de(sistema)
+    dentro_root = str(carpeta).startswith(str(ROOT.resolve())) and carpeta.is_dir()
+    if not dentro_root and not nativos:
         raise HTTPException(status_code=404, detail="Sistema no encontrado.")
     juegos = []
-    for f in sorted(carpeta.iterdir()):
-        if f.is_file():
-            juegos.append({"nombre": f.name, "tamano": f.stat().st_size})
+    if dentro_root:
+        for f in sorted(carpeta.iterdir()):
+            if f.is_file():
+                juegos.append({"nombre": f.name, "tamano": f.stat().st_size})
+    for nat in nativos:
+        juegos.append({"nombre": nat["filename"], "tamano": nat["sizeBytes"], "nativo": True})
     return juegos
 
 
@@ -459,9 +511,7 @@ def listar_juegos_galeria(
     if system is not None:
         system = nombre_seguro(system)
     resultado = []
-    if not ROOT.is_dir():
-        return resultado
-    carpetas = [ROOT / system] if system else sorted(ROOT.iterdir())
+    carpetas = [ROOT / system] if system else (sorted(ROOT.iterdir()) if ROOT.is_dir() else [])
     for carpeta in carpetas:
         if not carpeta.is_dir():
             continue
@@ -501,6 +551,12 @@ def listar_juegos_galeria(
                 "tipoGrupo": tipo_grupo,
                 "roles": roles,
             })
+    # Ports nativos (nx2android), junto a los emulados.
+    for sis in ([system] if system else sorted(_sistemas_con_nativos())):
+        for nat in _nativos_de(sis):
+            if q and q.lower() not in nat["filename"].lower():
+                continue
+            resultado.append(nat)
     return resultado
 
 
@@ -514,6 +570,21 @@ def servir_caratula(sistema: str, fichero: str, request: Request, token: str | N
         raise HTTPException(status_code=404, detail="Carátula no encontrada.")
     tipo, _ = mimetypes.guess_type(str(ruta))
     return FileResponse(ruta, media_type=tipo or "application/octet-stream")
+
+
+@app.get("/api/native/{sistema}/{fichero}")
+def descargar_nativo(sistema: str, fichero: str, request: Request, token: str | None = Query(default=None)):
+    """Sirve un fichero de un port nativo (el .zip APK+data, su sidecar .json o su
+    carátula) con soporte de Range para reanudar. La app lo descarga, descomprime
+    e instala en vez de emular."""
+    exigir_token(request, token)
+    sistema = nombre_seguro(sistema)
+    fichero = nombre_seguro(fichero)
+    ruta = (NATIVOS_ROOT / sistema / fichero).resolve()
+    if not str(ruta).startswith(str(NATIVOS_ROOT.resolve())) or not ruta.is_file():
+        raise HTTPException(status_code=404, detail="Nativo no encontrado.")
+    tipo, _ = mimetypes.guess_type(str(ruta))
+    return FileResponse(ruta, media_type=tipo or "application/octet-stream", filename=ruta.name)
 
 
 # Extensiones del fichero que lanza ES-DE dentro de un grupo de disco.
