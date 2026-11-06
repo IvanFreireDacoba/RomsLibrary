@@ -530,16 +530,27 @@ async def juegos_listado(sistema: str | None, texto: str | None, libreria: str, 
     return propios + otros
 
 
-async def obsoletas_para_app(completo: bool) -> list[dict]:
-    """Versiones superadas (propias y de librerías de confianza) y dónde está
-    la actual de cada una: la app actualiza con esto lo que tenga instalado."""
+async def versiones_para_app(completo: bool) -> dict:
+    """Lo que la app usa para actualizar lo que tenga instalado (accion=versiones):
+
+    - `obsoletas`: versiones SUPERADAS por SHA (propias y de librerías de
+      confianza) y dónde está la actual de cada una. Identidad exacta.
+    - `porNombre`: TODOS los juegos descargables con su nombre crudo y su
+      versión actual, para el CRUCE POR NOMBRE (convención): la app pasa a la
+      versión de la librería cualquier fichero instalado cuyo nombre coincida
+      (normalizado) aunque su SHA no esté en ninguna cadena —versiones viejas
+      que la librería no llegó a registrar, p.ej. un «Pokémon Team Rocket»
+      antiguo—. La app normaliza y decide; aquí solo se mandan los nombres."""
     propios, servicios, catalogos, lin = await red(completo=completo)
     donde: dict[str, dict] = {}       # sha actual -> dónde descargarlo
     tamanos: dict[str, int] = {}
+    por_nombre: list[dict] = []
     for j in propios:
         if j["sha"] and not j.get("esGrupo") and j["descargable"]:
             donde.setdefault(j["sha"], {"filename": j["filename"], "sizeBytes": j["sizeBytes"], "origenUrl": None,
                                         "fuenteExterna": j.get("fuenteExterna")})
+            por_nombre.append({"sistema": j["system"], "nombre": j["filename"], "sha": j["sha"],
+                               "tamano": j["sizeBytes"], "origenUrl": None, "fuenteExterna": j.get("fuenteExterna")})
         for s, t in j["anteriores"]:
             tamanos[s] = t
     for servicio, catalogo in zip(servicios, catalogos):
@@ -547,6 +558,9 @@ async def obsoletas_para_app(completo: bool) -> list[dict]:
             if j.get("sha") and not j.get("esGrupo"):
                 donde.setdefault(j["sha"], {"filename": j["filename"], "sizeBytes": j["sizeBytes"],
                                             "origenUrl": servicio["url"], "fuenteExterna": j.get("fuenteExterna")})
+                por_nombre.append({"sistema": j["system"], "nombre": j["filename"], "sha": j["sha"],
+                                   "tamano": j["sizeBytes"], "origenUrl": servicio["url"],
+                                   "fuenteExterna": j.get("fuenteExterna")})
             for s, t in j.get("anteriores", []):
                 tamanos.setdefault(s, t)
     sistema_de = {j["sha"]: j["system"] for j in propios if j["sha"]}
@@ -565,7 +579,7 @@ async def obsoletas_para_app(completo: bool) -> list[dict]:
         res.append({"sistema": sistema_de.get(actual), "sha": viejo, "tamano": tam, "n": n,
                     "actual": {"filename": d["filename"], "sha": actual, "n": n_actual, "sizeBytes": d["sizeBytes"],
                                "origenUrl": d["origenUrl"], "fuenteExterna": d["fuenteExterna"]}})
-    return res
+    return {"obsoletas": res, "porNombre": por_nombre}
 
 
 async def listar_para_app(sistema: str | None, texto: str | None, libreria: str, completo: bool) -> list[dict]:

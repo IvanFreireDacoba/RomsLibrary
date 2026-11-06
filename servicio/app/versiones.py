@@ -1,10 +1,17 @@
 """
-Versiones de los juegos. La identidad de un juego NO es su nombre (lo pone
-quien sube y se puede cambiar) sino su CADENA DE VERSIONES: cada juego tiene
-un id fijo y la lista de los SHA-256 que ha tenido (v1, v2, v3...). La versión
-actual es la última; las anteriores sirven para que las consolas que tengan
-una vieja sepan a qué juego pertenece y se actualicen (ver accion=versiones en
-api_app.py y ActualizadorRoms en la app).
+Versiones de los juegos. La identidad FUERTE de un juego es su CADENA DE
+VERSIONES: cada juego tiene un id fijo y la lista de los SHA-256 que ha tenido
+(v1, v2, v3...). La versión actual es la última; las anteriores sirven para que
+las consolas que tengan una vieja sepan a qué juego pertenece y se actualicen
+(ver accion=versiones en api_app.py y ActualizadorRoms en la app).
+
+Además, como CONVENCIÓN, hay un cruce POR NOMBRE (`porNombre` en
+federacion.versiones_para_app): la app pasa a la versión de la librería
+cualquier fichero instalado cuyo nombre coincida (normalizado: sin tildes, sin
+(región)/[tag], sin extensión) aunque su SHA no esté en ninguna cadena —
+versiones viejas que la librería nunca registró, p.ej. un «Pokémon Team Rocket»
+antiguo—. La librería manda SOLO los nombres crudos; normaliza y decide la app,
+que conserva el basename del fichero (las partidas de RetroArch van por él).
 
 Reglas:
 - Un SHA pertenece a UN solo juego (clave primaria): no puede ser a la vez

@@ -149,9 +149,10 @@ async def api_app(request: Request):
         return await asyncio.to_thread(nucleo.servir_fichero_de_grupo, _param(q, "system"), _param(q, "grupo"),
                                        _param(q, "fichero"), comprimidos.ESPERA_APP)
     if accion == "versiones":
-        # Versiones superadas de los juegos de esta librería y la actual de
-        # cada uno: la app actualiza lo que tenga instalado (ver versiones.py).
-        return _json(request, {"obsoletas": await federacion.obsoletas_para_app(completo)})
+        # Versiones superadas por SHA (obsoletas) y catálogo por nombre
+        # (porNombre, cruce por nombre): la app actualiza lo que tenga
+        # instalado (ver versiones.py y ActualizadorRoms).
+        return _json(request, await federacion.versiones_para_app(completo))
     if accion == "version":
         return await _version()
     if accion == "apk":
