@@ -91,6 +91,10 @@ EXTENSIONES_POR_SISTEMA = {
     "gbc": {".gbc", ".zip"},
     "gba": {".gba", ".zip"},
     "nds": {".nds", ".zip"},
+    # 3DS: ROMs (.3ds/.cci/.cxi), instalables (.cia) y homebrew (.3dsx). Además
+    # admite PORTS NATIVOS de Android single-screen (como la Switch con
+    # nx2android), p.ej. Ocarina ReTuned -- esos viven en nativos/3ds/.
+    "3ds": {".3ds", ".cci", ".cxi", ".cia", ".3dsx", ".app", ".zip"},
     "nes": {".nes", ".fds", ".unf", ".zip"},
     "snes": {".sfc", ".smc", ".zip"},
     "megadrive": {".md", ".gen", ".smd", ".bin", ".zip"},
