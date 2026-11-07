@@ -73,12 +73,25 @@ def instalar(nueva: dict, progreso=None) -> None:
         shutil.rmtree(nueva_carpeta, ignore_errors=True)
         nueva_carpeta.mkdir()
         _extraer(temporal, nueva_carpeta)
-        # El paquete trae una carpeta raíz ("romslibrary/"): se sube un nivel.
-        dentro = [p for p in nueva_carpeta.iterdir()]
-        if len(dentro) == 1 and dentro[0].is_dir():
-            for p in dentro[0].iterdir():
-                p.rename(nueva_carpeta / p.name)
-            dentro[0].rmdir()
+        # El paquete trae el launcher "RomsLibrary.sh" + la carpeta de la app con
+        # el MISMO nombre que carpeta_app (el onedir, con un binario homónimo
+        # dentro). Instalamos: (1) el launcher (hermano de carpeta_app) si viene,
+        # y (2) la carpeta de la app como <.nueva> "aplanada", moviéndola ENTERA
+        # -- mover sus hijos uno a uno chocaría con el binario "romslibrary" vs la
+        # carpeta "romslibrary" (OSError -> update roto, el fallo que teníamos).
+        app_dir = nueva_carpeta / carpeta_app.name
+        if not app_dir.is_dir():
+            solo = [p for p in nueva_carpeta.iterdir() if p.is_dir()]
+            app_dir = solo[0] if len(solo) == 1 else None
+        launcher_src = nueva_carpeta / "RomsLibrary.sh"
+        if launcher_src.is_file():
+            shutil.copy2(launcher_src, padre / "RomsLibrary.sh")
+        if app_dir is not None and app_dir != nueva_carpeta:
+            interior = padre / (carpeta_app.name + ".interior")
+            shutil.rmtree(interior, ignore_errors=True)
+            app_dir.rename(interior)                          # <.nueva>/romslibrary -> <.interior>
+            shutil.rmtree(nueva_carpeta, ignore_errors=True)  # resto del paquete (launcher ya copiado)
+            interior.rename(nueva_carpeta)                    # <.interior> -> <.nueva> (= carpeta de la app)
     finally:
         if os.path.exists(temporal):
             os.remove(temporal)
