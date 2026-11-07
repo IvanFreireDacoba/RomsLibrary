@@ -328,7 +328,10 @@ def listar_sistemas(request: Request, token: str | None = Query(default=None)):
                 conteo[carpeta.name] = sum(1 for f in carpeta.iterdir() if f.is_file() or f.is_dir())
     for sis in _sistemas_con_nativos():
         conteo[sis] = conteo.get(sis, 0) + len(_nativos_de(sis))
-    return [{"sistema": s, "juegos": n} for s, n in sorted(conteo.items())]
+    # Las consolas con 0 juegos no salen en los filtros (web y app): no tiene
+    # sentido ofrecer un filtro vacío (p.ej. tras borrar todos los juegos de un
+    # sistema, su carpeta puede quedar pero sin juegos).
+    return [{"sistema": s, "juegos": n} for s, n in sorted(conteo.items()) if n > 0]
 
 
 @app.get("/api/systems/{sistema}")
