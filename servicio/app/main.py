@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import unicodedata
 import zipfile
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -299,6 +300,22 @@ def _nativos_de(sistema: str) -> list[dict]:
     return res
 
 
+def _clave_orden(nombre: str) -> tuple:
+    """Orden alfabético de la galería y los listados. Dos reglas:
+
+    1. Ignora la EXTENSIÓN. Si no, en "Castlevania.zip" el carácter tras el base
+       es "." (0x2E) y en "Castlevania 2.zip" es " " (0x20): el espacio va antes
+       que el punto y las secuelas saldrían ANTES que el juego base. Quitando la
+       extensión, "Castlevania" (prefijo) va antes que "Castlevania 2"/"3".
+    2. Los títulos que empiezan por NÚMERO ("1987" y similares) van al FINAL, no
+       al principio (los dígitos son menores que las letras en bruto)."""
+    base = nombre[1:] if nombre.startswith(".") else nombre
+    base = base.rsplit(".", 1)[0] if "." in base else base
+    b = unicodedata.normalize("NFKD", base).encode("ascii", "ignore").decode().casefold().strip()
+    grupo = 1 if b[:1].isdigit() else 0          # empieza por número -> al final
+    return (grupo, b, nombre.casefold())
+
+
 @app.get("/api/systems")
 def listar_sistemas(request: Request, token: str | None = Query(default=None)):
     exigir_token(request, token)
@@ -325,11 +342,12 @@ def listar_juegos(sistema: str, request: Request, token: str | None = Query(defa
         raise HTTPException(status_code=404, detail="Sistema no encontrado.")
     juegos = []
     if dentro_root:
-        for f in sorted(carpeta.iterdir()):
+        for f in carpeta.iterdir():
             if f.is_file():
                 juegos.append({"nombre": f.name, "tamano": f.stat().st_size})
     for nat in nativos:
         juegos.append({"nombre": nat["filename"], "tamano": nat["sizeBytes"], "nativo": True})
+    juegos.sort(key=lambda j: _clave_orden(j["nombre"]))
     return juegos
 
 
@@ -557,6 +575,7 @@ def listar_juegos_galeria(
             if q and q.lower() not in nat["filename"].lower():
                 continue
             resultado.append(nat)
+    resultado.sort(key=lambda j: (j["system"], _clave_orden(j["filename"])))
     return resultado
 
 

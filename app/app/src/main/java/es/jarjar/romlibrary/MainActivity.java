@@ -1348,7 +1348,15 @@ public class MainActivity extends BaseActivity {
         java.text.Collator collator = java.text.Collator.getInstance(new java.util.Locale("es", "ES"));
         collator.setStrength(java.text.Collator.PRIMARY);
         java.util.Comparator<Juego> alfabetico = (a, b) -> {
-            int c = collator.compare(a.nombreMostrado(), b.nombreMostrado());
+            String na = a.nombreMostrado(), nb = b.nombreMostrado();
+            // Los títulos que empiezan por número ("1987"...) van al FINAL, no al principio.
+            int ga = !na.isEmpty() && Character.isDigit(na.charAt(0)) ? 1 : 0;
+            int gb = !nb.isEmpty() && Character.isDigit(nb.charAt(0)) ? 1 : 0;
+            if (ga != gb) {
+                return Integer.compare(ga, gb);
+            }
+            // Sin extensión (nombreMostrado ya la quita): "Castlevania" va antes que "Castlevania 2".
+            int c = collator.compare(na, nb);
             return c != 0 ? c : a.sistema.compareTo(b.sistema);
         };
         boolean porFecha = orden == ORDEN_MAS_NUEVOS || orden == ORDEN_MAS_VIEJOS;
