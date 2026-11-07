@@ -55,6 +55,10 @@ final class Juego {
     // Port recompilado a nativo (nx2android): lo instala/actualiza jarjar por adb,
     // no se descarga como ROM desde la app. Solo informa + distintivo en la ficha.
     boolean nativo;
+    // Nativo AUTOCONTENIDO (solo APK, sin data pack, p.ej. Ocarina ReTuned): la
+    // app lo descarga e instala ella misma (PackageInstaller), en cualquier
+    // consola. Si es nativo pero NO soloApk, lo instala jarjar por adb.
+    boolean soloApk;
     boolean descargando; // estado de UI puro (no viene del servidor): sustituye el botón por una barra de progreso.
     boolean enCola; // esperando su turno en la cola de descargas (ver MainActivity.solicitarDescarga).
     volatile long bytesDescargados;

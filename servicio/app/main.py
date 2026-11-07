@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from PIL import Image
 from starlette.background import BackgroundTask
 
@@ -300,6 +300,9 @@ def _nativos_de(sistema: str) -> list[dict]:
             "package": d.get("package"),
             "version": d.get("version"),
             "zip": zip_name,
+            # Autocontenido (solo APK, sin data pack): la app lo instala ella
+            # misma. Si no, lo instala jarjar por adb (nx2android con data pack).
+            "soloApk": bool(d.get("soloApk")),
         })
     return res
 
@@ -611,6 +614,43 @@ def descargar_nativo(sistema: str, fichero: str, request: Request, token: str | 
         raise HTTPException(status_code=404, detail="Nativo no encontrado.")
     tipo, _ = mimetypes.guess_type(str(ruta))
     return FileResponse(ruta, media_type=tipo or "application/octet-stream", filename=ruta.name)
+
+
+@app.get("/api/native_apk/{sistema}/{fichero}")
+def descargar_nativo_apk(sistema: str, fichero: str, request: Request, token: str | None = Query(default=None)):
+    """Sirve el APK de un port nativo AUTOCONTENIDO (soloApk: el .zip no lleva
+    data pack, solo el APK) extraído del .zip, para que la app RomsLibrary lo
+    instale ella misma (PackageInstaller) en cualquier dispositivo -- así cloroboy
+    y cualquier consola lo instalan sin adb. Los nativos con data pack
+    (nx2android) NO se sirven por aquí: esos los instala jarjar por adb."""
+    exigir_token(request, token)
+    sistema = nombre_seguro(sistema)
+    fichero = nombre_seguro(fichero)
+    nat = next((n for n in _nativos_de(sistema) if n["filename"] == fichero), None)
+    if not nat or not nat.get("soloApk"):
+        raise HTTPException(status_code=404, detail="Nativo autoinstalable no encontrado.")
+    zip_path = (NATIVOS_ROOT / sistema / nat["zip"]).resolve()
+    if not str(zip_path).startswith(str(NATIVOS_ROOT.resolve())) or not zip_path.is_file():
+        raise HTTPException(status_code=404, detail="Paquete del nativo no encontrado.")
+    zf = zipfile.ZipFile(zip_path)
+    apks = [n for n in zf.namelist() if n.lower().endswith(".apk")]
+    if not apks:
+        zf.close()
+        raise HTTPException(status_code=404, detail="El nativo no contiene un APK.")
+    info = zf.getinfo(apks[0])
+
+    def generar():
+        with zf.open(apks[0]) as f:
+            while True:
+                trozo = f.read(1024 * 1024)
+                if not trozo:
+                    break
+                yield trozo
+        zf.close()
+
+    return StreamingResponse(generar(), media_type="application/vnd.android.package-archive",
+                             headers={"Content-Length": str(info.file_size),
+                                      "Content-Disposition": f'attachment; filename="{apks[0]}"'})
 
 
 # Extensiones del fichero que lanza ES-DE dentro de un grupo de disco.

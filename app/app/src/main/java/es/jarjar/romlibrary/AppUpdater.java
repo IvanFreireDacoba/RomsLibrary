@@ -136,7 +136,7 @@ public final class AppUpdater {
         return sb.toString();
     }
 
-    private static void lanzarInstalador(Activity activity, File apk, String baseUrl, String token, String rutaApk) {
+    static void lanzarInstalador(Activity activity, File apk, String baseUrl, String token, String rutaApk) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 && !activity.getPackageManager().canRequestPackageInstalls()) {
             Toast.makeText(activity, "Activa \"instalar apps desconocidas\" para esta app y vuelve a intentarlo",

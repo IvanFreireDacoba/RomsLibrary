@@ -1421,6 +1421,7 @@ public class MainActivity extends BaseActivity {
                     roles == null ? 0 : roles.optInt("update", 0),
                     roles == null ? 0 : roles.optInt("dlc", 0));
             juego.nativo = o.optBoolean("nativo", false);
+            juego.soloApk = o.optBoolean("soloApk", false);
             juego.origen = o.isNull("origen") || !o.has("origen") ? null : o.getString("origen");
             if (juego.origen != null) {
                 // Juego de otra librería: solo por https y con la carátula en
@@ -1642,13 +1643,24 @@ public class MainActivity extends BaseActivity {
 
     private void onAccionInstalarDesinstalar(Juego juego) {
         if (juego.nativo) {
-            new AlertDialog.Builder(this)
-                    .setTitle("Juego nativo")
-                    .setMessage("«" + juego.nombreMostrado() + "» es un port nativo (nx2android). Lo instala y "
-                            + "actualiza jarjar automáticamente por adb cuando la consola está conectada; no se "
-                            + "descarga como ROM desde aquí.")
-                    .setPositiveButton("Vale", null)
-                    .show();
+            if (juego.soloApk) {
+                new AlertDialog.Builder(this)
+                        .setTitle("Instalar port nativo")
+                        .setMessage("«" + juego.nombreMostrado() + "» es un port nativo autocontenido. Se descarga e "
+                                + "instala como app en esta consola. Recuerda: necesitas aportar tu propia copia legal "
+                                + "del juego en el dispositivo.")
+                        .setPositiveButton("Instalar", (d, w) -> descargarEInstalarNativo(juego))
+                        .setNegativeButton("Cancelar", null)
+                        .show();
+            } else {
+                new AlertDialog.Builder(this)
+                        .setTitle("Juego nativo")
+                        .setMessage("«" + juego.nombreMostrado() + "» es un port nativo (nx2android). Lo instala y "
+                                + "actualiza jarjar automáticamente por adb cuando la consola está conectada; no se "
+                                + "descarga como ROM desde aquí.")
+                        .setPositiveButton("Vale", null)
+                        .show();
+            }
             return;
         }
         if (juego.instaladoLocal) {
@@ -1675,6 +1687,30 @@ public class MainActivity extends BaseActivity {
         } else {
             solicitarDescarga(juego);
         }
+    }
+
+    /** Descarga el APK de un port nativo autocontenido (soloApk) y lo instala
+     *  aquí mismo (PackageInstaller), igual que el auto-update de la app. Así
+     *  cualquier consola (la Nova, la de cloroboy...) lo instala sin adb. */
+    private void descargarEInstalarNativo(Juego juego) {
+        Toast.makeText(this, "Descargando «" + juego.nombreMostrado() + "»…", Toast.LENGTH_SHORT).show();
+        final String base = baseUrl, tok = token;
+        final String ruta = "/api/native_apk/" + Uri.encode(juego.sistema) + "/" + Uri.encode(juego.nombreFichero);
+        new Thread(() -> {
+            java.io.File apk = new java.io.File(getCacheDir(), "nativo.apk");
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(apk)) {
+                ApiClient.descargarAFichero(base, tok, ruta, out);
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, "No se pudo descargar el nativo: " + e.getMessage(),
+                        Toast.LENGTH_LONG).show());
+                return;
+            }
+            runOnUiThread(() -> {
+                if (!isFinishing()) {
+                    AppUpdater.lanzarInstalador(this, apk, base, tok, ruta);
+                }
+            });
+        }, "nativo-apk").start();
     }
 
     /**
