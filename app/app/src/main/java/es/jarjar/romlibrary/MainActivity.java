@@ -49,6 +49,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -734,7 +736,7 @@ public class MainActivity extends BaseActivity {
         }
         new Thread(() -> {
             try {
-                colocarCaratulaEsDe(juego);
+                colocarCaratulaEsDe(juego, juego.nombreFichero, true);
             } finally {
                 alTerminar.run();
             }
@@ -742,20 +744,36 @@ public class MainActivity extends BaseActivity {
     }
 
     /**
-     * Descarga la carátula del juego y la deja en
-     * ES-DE/downloaded_media/&lt;sistema&gt;/covers/ con el nombre EXACTO que
-     * ES-DE espera (ver {@link #nombreMediaESDE}). Bloqueante: llamar desde un
-     * hilo de fondo. Devuelve true si quedó colocada. Best-effort: ante
-     * cualquier fallo devuelve false sin lanzar.
+     * Descarga la carátula AUTORITATIVA del juego (la de la ficha RomsLibrary,
+     * la que el usuario subió) y la deja en
+     * ES-DE/downloaded_media/&lt;sistema&gt;/covers/ con LOS DOS nombres que ES-DE
+     * puede buscar: el del ROM SIN extensión y el completo CON extensión. Los
+     * FICHEROS casan sin extensión; las CARPETAS folder-as-file (PS1 .cue, ACNH,
+     * nativos .nsp) casan con el nombre completo -- dejar ambos hace que la
+     * carátula salga SIEMPRE, sea fichero o carpeta.
+     *
+     * @param nombreRealRom nombre REAL del ROM/placeholder en disco (con su
+     *                      extensión; para un nativo, «X.nsp»).
+     * @param sobrescribir  true = pisa la que hubiera (carátula autoritativa);
+     *                      false = solo coloca si falta alguno de los dos nombres.
+     * Bloqueante; best-effort (nunca lanza). Devuelve true si tocó algo.
      */
-    private boolean colocarCaratulaEsDe(Juego juego) {
+    private boolean colocarCaratulaEsDe(Juego juego, String nombreRealRom, boolean sobrescribir) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || !Environment.isExternalStorageManager()
-                || juego.coverUrl == null) {
+                || juego.coverUrl == null || nombreRealRom == null || nombreRealRom.isEmpty()) {
             return false;
+        }
+        String stem = stemSinExtension(nombreRealRom);
+        // Los dos nombres de media (sin duplicar si el ROM no tiene extensión).
+        java.util.LinkedHashSet<String> nombres = new java.util.LinkedHashSet<>();
+        nombres.add(stem);
+        nombres.add(nombreRealRom);
+        File carpetaCovers = carpetaCoversESDE(juego.sistema);
+        if (!sobrescribir && todosLosNombresTienenCaratula(carpetaCovers, nombres)) {
+            return false;   // ya están las dos: no re-descargar
         }
         File temporal = null;
         try {
-            File carpetaCovers = carpetaCoversESDE(juego.sistema);
             if (!(carpetaCovers.isDirectory() || carpetaCovers.mkdirs())) {
                 return false;
             }
@@ -764,9 +782,8 @@ public class MainActivity extends BaseActivity {
             // al terminar. Bug real encontrado: una carátula subida como
             // JPEG real pero nombrada "....png" en el servidor rompía la
             // detección de ES-DE porque confiábamos en el nombre en vez
-            // del contenido; esto ya está arreglado también en el
-            // servidor (jarjar ahora sniffea la extensión al subir), pero
-            // esta comprobación se queda aquí como defensa adicional.
+            // del contenido; el servidor ya sniffea la extensión al subir,
+            // pero esta comprobación se queda aquí como defensa adicional.
             temporal = File.createTempFile("caratula_esde", null, getCacheDir());
             try (FileOutputStream out = new FileOutputStream(temporal)) {
                 ApiClient.descargarAFichero(juego.base(baseUrl), juego.clave(token), juego.coverUrl, out);
@@ -775,39 +792,27 @@ public class MainActivity extends BaseActivity {
             if (extension == null) {
                 return false;
             }
-            String nombreMedia = nombreMediaESDE(juego);
-            migrarMediaAnteriorESDE(carpetaCovers.getParentFile(), juego, nombreMedia);
-            File destino = new File(carpetaCovers, nombreMedia + extension);
-            borrarCaratulasConOtraExtension(carpetaCovers, nombreMedia, extension);
-            // BUG REAL ENCONTRADO (ficheros de carátula ausentes en TODOS
-            // los casos frescos probados, tras el fix de volumen): File.
-            // renameTo() usa rename(2), que solo funciona DENTRO del mismo
-            // sistema de ficheros. El temporal vive siempre en la caché
-            // interna de la app (getCacheDir()); en cuanto carpetaCovers
-            // pasó a apuntar a la tarjeta SD (fix de volumen anterior),
-            // CUALQUIER renameTo() cruzando de interno a SD falla siempre
-            // -- silenciosamente, sin excepción -- así que la carátula
-            // nunca llegaba a ningún sitio. Se sustituye por una copia
-            // real de bytes (funciona cruzando sistemas de ficheros) y
-            // luego se borra el temporal.
-            if (!copiarFichero(temporal, destino)) {
-                android.util.Log.w("RomLibrary", "No se pudo copiar la carátula a " + destino);
-                return false;
+            // Conserva el scrapeo viejo del stem si lo hubiera (renombra a la media nueva).
+            migrarMediaAnteriorESDE(carpetaCovers.getParentFile(), juego, stem);
+            boolean algo = false;
+            for (String nombreMedia : nombres) {
+                File destino = new File(carpetaCovers, nombreMedia + extension);
+                borrarCaratulasConOtraExtension(carpetaCovers, nombreMedia, extension);
+                // File.renameTo() usa rename(2) y falla silenciosamente cruzando
+                // sistemas de ficheros (el temporal vive en la caché interna y
+                // carpetaCovers suele estar en la SD): se copian los bytes.
+                if (!copiarFichero(temporal, destino)) {
+                    android.util.Log.w("RomLibrary", "No se pudo copiar la carátula a " + destino);
+                    continue;
+                }
+                // Un fichero creado con MANAGE_EXTERNAL_STORAGE no entra solo en
+                // el índice MediaStore: forzar el escaneo evita que quede invisible.
+                android.media.MediaScannerConnection.scanFile(this,
+                        new String[]{destino.getAbsolutePath()}, null, null);
+                algo = true;
             }
-            temporal.delete();
-            temporal = null; // ya se copió y se borró, no volver a borrar en el finally
-            // Un fichero creado con java.io.File (MANAGE_EXTERNAL_STORAGE)
-            // no entra automáticamente en el índice MediaStore de Android
-            // -- si ES-DE consulta media por ahí en vez de listar la
-            // carpeta a pelo, el fichero puede quedar "invisible" para
-            // siempre (ni un reinicio completo lo arregla, porque no es
-            // un problema de proceso/caché de ES-DE sino del índice del
-            // sistema). Forzar el escaneo cubre ese caso sin coste real.
-            android.media.MediaScannerConnection.scanFile(this,
-                    new String[]{destino.getAbsolutePath()}, null, null);
-            return true;
+            return algo;
         } catch (Exception e) {
-            // Best-effort -- el refresco de ES-DE se intenta igualmente.
             android.util.Log.w("RomLibrary", "Carátula para ES-DE", e);
             return false;
         } finally {
@@ -815,6 +820,15 @@ public class MainActivity extends BaseActivity {
                 temporal.delete();
             }
         }
+    }
+
+    private boolean todosLosNombresTienenCaratula(File carpeta, java.util.Collection<String> nombres) {
+        for (String n : nombres) {
+            if (!tieneCaratulaExacta(carpeta, n)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Copia bytes de un fichero a otro -- a diferencia de File.renameTo(), funciona cruzando sistemas de ficheros (interno -> SD). */
@@ -951,89 +965,123 @@ public class MainActivity extends BaseActivity {
             }
             porSistema.computeIfAbsent(j.sistema, k -> new ArrayList<>()).add(j);
         }
-        int colocadas = 0, corregidas = 0, borradas = 0;
+        int colocadas = 0, limpiadas = 0, gamelists = 0;
         for (Map.Entry<String, List<Juego>> e : porSistema.entrySet()) {
             String sistema = e.getKey();
             File carpetaCovers = carpetaCoversESDE(sistema);
-            // Los nombres de ROM presentes en el dispositivo para este sistema
-            // (fichero suelto o carpeta-placeholder), por nombre completo y por
-            // raíz sin extensión: así sabemos qué carátula tiene un juego que
-            // la muestre (para no borrarla) y cuál está huérfana.
-            Set<String> romsPresentes = nombresRomPresentes(arbolUri, sistema);
-            Set<String> correctosInstalados = new HashSet<>();
-            // 1 + 2) por cada juego presente: colocar la que falte, corregir la mal nombrada.
+            // Nombres de ROM presentes en el dispositivo (nombre completo de la
+            // entrada) y, aparte, el conjunto ampliado con las raíces sin
+            // extensión (para saber qué carátula tiene algún ROM que la muestre).
+            Map<String, CarpetaRomsUtil.Hijo> entradas = entradasRomSistema(arbolUri, sistema);
+            Set<String> romsCompletos = entradas.keySet();
+            Set<String> romsPresentes = conRaices(romsCompletos);
+            // Juegos instalados de este sistema, con su nombre REAL de ROM en disco.
+            List<Juego> instalados = new ArrayList<>();
+            Map<Juego, String> nombreRealRom = new HashMap<>();
+            Set<String> validasCovers = new HashSet<>();
             for (Juego j : e.getValue()) {
-                String media = nombreMediaESDE(j);
-                boolean presente = j.instaladoLocal || romsPresentes.contains(media);
+                String real = nombreRealRomDe(j, romsCompletos);
+                boolean presente = j.instaladoLocal || real != null;
                 if (!presente) {
                     continue;
                 }
-                correctosInstalados.add(media);
-                boolean hayCorrecta = tieneCaratulaExacta(carpetaCovers, media);
-                File[] mal = carpetaCovers.listFiles((d, n) -> esCaratulaMalNombrada(n, media));
-                if (mal != null) {
-                    for (File f : mal) {
-                        String img = extImagenDe(f.getName());
-                        if (!hayCorrecta && img != null) {
-                            File destino = new File(carpetaCovers, media + img);
-                            if (!destino.exists() && f.renameTo(destino)) {
-                                hayCorrecta = true;
-                                corregidas++;
-                                android.media.MediaScannerConnection.scanFile(this,
-                                        new String[]{f.getAbsolutePath(), destino.getAbsolutePath()}, null, null);
-                                continue;
-                            }
-                        }
-                        if (f.delete()) {   // duplicada mal nombrada que ya sobra
-                            corregidas++;
-                            android.media.MediaScannerConnection.scanFile(this,
-                                    new String[]{f.getAbsolutePath()}, null, null);
-                        }
-                    }
+                if (real == null) {                 // instalado según el catálogo pero sin verlo en disco
+                    real = juegoRomPorDefecto(j);
                 }
-                if (!hayCorrecta && j.coverUrl != null && colocarCaratulaEsDe(j)) {
+                instalados.add(j);
+                nombreRealRom.put(j, real);
+                validasCovers.add(real);
+                validasCovers.add(stemSinExtension(real));
+                // 1) Carátula AUTORITATIVA con los dos nombres. Para nativos se
+                // SOBRESCRIBE siempre (su media solía venir del icono cuadrado);
+                // para el resto, solo si falta alguno de los dos nombres.
+                if (j.coverUrl != null && colocarCaratulaEsDe(j, real, j.nativo)) {
                     colocadas++;
                 }
             }
-            // 3) huérfanas: carátulas sin NINGÚN ROM que las muestre. Solo si
-            // tenemos un listado fiable del dispositivo (si no, no se borra nada).
+            // 2) Huérfanas: carátulas sin NINGÚN ROM que las muestre (incluye las
+            // de versiones viejas). Solo si el listado del dispositivo es fiable.
             if (!romsPresentes.isEmpty()) {
                 Set<String> validas = new HashSet<>(romsPresentes);
-                validas.addAll(correctosInstalados);
-                borradas += borrarCaratulasHuerfanas(carpetaCovers, validas);
+                validas.addAll(validasCovers);
+                limpiadas += borrarCaratulasHuerfanas(carpetaCovers, validas);
+            }
+            // 3) gamelist.xml: entrada con el <path> = nombre REAL del ROM
+            // (extensión incluida) + metadata de la ficha; quita las que apunten
+            // a ficheros que ya no están (p.ej. una vieja «.gba» al pasar a «.zip»).
+            // Solo si gestionamos juegos instalados aquí (así nunca reescribimos un
+            // gamelist de un sistema que solo maneja ES-DE).
+            if (!instalados.isEmpty()) {
+                if (actualizarGamelist(sistema, instalados, nombreRealRom, romsCompletos)) {
+                    gamelists++;
+                }
             }
         }
-        if (colocadas + corregidas + borradas > 0) {
-            final int c = colocadas, r = corregidas, b = borradas;
+        if (colocadas + limpiadas + gamelists > 0) {
+            final int c = colocadas, l = limpiadas, g = gamelists;
             runOnUiThread(() -> Toast.makeText(this,
-                    "ES-DE carátulas: " + c + " nuevas, " + r + " corregidas, " + b + " limpiadas",
+                    "ES-DE: " + c + " carátulas, " + l + " limpiadas, " + g + " listas al día",
                     Toast.LENGTH_SHORT).show());
-            // ES-DE debe releer su media.
             Context ctx = getApplicationContext();
             new Thread(() -> RefrescoEsDe.marcarAutomatico(ctx), "bandera-esde-higiene").start();
         }
     }
 
-    /** Nombres de las ROMs presentes para un sistema en la carpeta elegida:
-     *  cada entrada por su nombre completo y por su raíz sin extensión. */
-    private Set<String> nombresRomPresentes(Uri arbolUri, String sistema) {
-        Set<String> nombres = new HashSet<>();
+    /** Nombre de ROM/placeholder en disco por defecto si no se ve (fallback). */
+    private String juegoRomPorDefecto(Juego j) {
+        return j.nativo ? j.nombreFichero + ".nsp" : j.nombreFichero;
+    }
+
+    /** Nombre REAL en disco del ROM de un juego, o null si no está presente.
+     *  Para ficheros/grupos es el propio nombreFichero; para nativos, la
+     *  carpeta-placeholder cuyo stem coincide (p.ej. «X» -> «X.nsp»). */
+    private String nombreRealRomDe(Juego j, Set<String> romsCompletos) {
+        if (romsCompletos.contains(j.nombreFichero)) {
+            return j.nombreFichero;
+        }
+        for (String nombre : romsCompletos) {
+            if (stemSinExtension(nombre).equals(j.nombreFichero)) {
+                return nombre;    // placeholder de nativo «X.nsp» para el juego «X»
+            }
+        }
+        return null;
+    }
+
+    /** Entradas de ROM presentes para un sistema en la carpeta elegida
+     *  (nombre completo -> hijo). Ignora los temporales de actualización
+     *  («*.actualizando», «*.anterior») para no catalogarlos. */
+    private Map<String, CarpetaRomsUtil.Hijo> entradasRomSistema(Uri arbolUri, String sistema) {
+        Map<String, CarpetaRomsUtil.Hijo> res = new HashMap<>();
         if (arbolUri == null) {
-            return nombres;
+            return res;
         }
         Map<String, CarpetaRomsUtil.Hijo> raiz = CarpetaRomsUtil.hijos(this, arbolUri, null);
         CarpetaRomsUtil.Hijo carpetaSistema = raiz.get(sistema);
         if (carpetaSistema == null || !carpetaSistema.carpeta) {
-            return nombres;
+            return res;
         }
-        for (String nombre : CarpetaRomsUtil.hijos(this, arbolUri, carpetaSistema.id).keySet()) {
-            nombres.add(nombre);
-            int punto = nombre.lastIndexOf('.');
-            if (punto > 0) {
-                nombres.add(nombre.substring(0, punto));
+        for (Map.Entry<String, CarpetaRomsUtil.Hijo> h : CarpetaRomsUtil.hijos(this, arbolUri, carpetaSistema.id).entrySet()) {
+            String nombre = h.getKey();
+            if (nombre.startsWith(".") || nombre.endsWith(".actualizando") || nombre.endsWith(".anterior")) {
+                continue;
             }
+            res.put(nombre, h.getValue());
         }
-        return nombres;
+        return res;
+    }
+
+    /** El conjunto de nombres ampliado con sus raíces sin extensión. */
+    private static Set<String> conRaices(Set<String> nombres) {
+        Set<String> res = new HashSet<>(nombres);
+        for (String n : nombres) {
+            res.add(stemDe(n));
+        }
+        return res;
+    }
+
+    private static String stemDe(String nombre) {
+        int p = nombre.lastIndexOf('.');
+        return p > 0 ? nombre.substring(0, p) : nombre;
     }
 
     private boolean tieneCaratulaExacta(File carpeta, String stem) {
@@ -1057,21 +1105,184 @@ public class MainActivity extends BaseActivity {
         return null;
     }
 
-    /** ¿Es una carátula mal nombrada de este juego? El nombre es
-     *  «&lt;media&gt;.&lt;segmento&gt;.&lt;img&gt;» con un segmento intermedio
-     *  corto tipo extensión de ROM (p.ej. «X.nsp.jpg» para media «X»). No casa
-     *  con la carátula correcta «&lt;media&gt;.&lt;img&gt;». */
-    private static boolean esCaratulaMalNombrada(String nombre, String media) {
-        String img = extImagenDe(nombre);
-        if (img == null) {
+    // ---------- gamelist.xml de ES-DE (metadata + path correcto) ----------
+    //
+    // ES-DE casa cada entrada del gamelist con el ROM por su <path> EXACTO
+    // (nombre + extensión). Si el ROM cambia de extensión (p.ej. re-descargar un
+    // GBA como .zip) la entrada vieja «.gba» deja de casar y el juego sale
+    // «Unknown». Por cada juego instalado dejamos su entrada con el <path> = el
+    // nombre REAL del ROM en disco y la metadata de la ficha RomsLibrary,
+    // MIGRANDO la entrada vieja del mismo juego (conserva lo que ya tuviera:
+    // favorito, veces jugado, etc.) y quitando las que apuntan a ficheros que
+    // ya no están.
+
+    private static final Pattern BLOQUE_GAME_GL = Pattern.compile("<game>.*?</game>", Pattern.DOTALL);
+    private static final Pattern BLOQUE_FOLDER_GL = Pattern.compile("<folder>.*?</folder>", Pattern.DOTALL);
+    private static final Pattern PATH_GAME_GL = Pattern.compile("<path>\\s*\\.?/?([^<]*)</path>", Pattern.DOTALL);
+    // Campos de la ficha -> etiqueta del gamelist de ES-DE (solo texto libre seguro).
+    private static final String[][] META_A_GAMELIST = {
+            {"descripcion", "desc"}, {"desarrollador", "developer"}, {"editor", "publisher"}, {"genero", "genre"},
+    };
+
+    /** Reescribe gamelists/&lt;sistema&gt;/gamelist.xml: migra/crea la entrada de
+     *  cada instalado con el path real + metadata de la ficha y descarta las que
+     *  apuntan a ROMs ausentes. Devuelve true si el fichero cambió. */
+    private boolean actualizarGamelist(String sistema, List<Juego> instalados,
+                                       Map<Juego, String> nombreRealRom, Set<String> romsCompletos) {
+        File gamelist = new File(new File(Environment.getExternalStorageDirectory(), "ES-DE"),
+                "gamelists/" + sistema + "/gamelist.xml");
+        String viejo = leerTextoGamelist(gamelist);
+        if (viejo == null) {
+            viejo = "";
+        }
+        // stem del ROM real -> juego instalado (para migrar la entrada vieja, aunque cambiara de extensión).
+        Map<String, Juego> porStem = new HashMap<>();
+        for (Juego j : instalados) {
+            porStem.put(stemDe(nombreRealRom.get(j)), j);
+        }
+        StringBuilder bloques = new StringBuilder();
+        // Las entradas <folder> (metadata de carpetas, p.ej. «updates» de Switch) se
+        // conservan tal cual: no las gestiona la app.
+        Matcher mf = BLOQUE_FOLDER_GL.matcher(viejo);
+        while (mf.find()) {
+            bloques.append(mf.group());
+            if (!mf.group().endsWith("\n")) {
+                bloques.append("\n");
+            }
+        }
+        Set<Juego> yaPuestos = new HashSet<>();
+        Matcher m = BLOQUE_GAME_GL.matcher(viejo);
+        while (m.find()) {
+            String bloque = m.group();
+            Matcher pm = PATH_GAME_GL.matcher(bloque);
+            if (!pm.find()) {
+                continue;
+            }
+            String fichero = desescaparXmlGl(pm.group(1).trim());
+            Juego j = porStem.get(stemDe(fichero));
+            if (j != null) {
+                if (yaPuestos.contains(j)) {
+                    continue;   // entrada duplicada del mismo juego: una basta
+                }
+                bloques.append(bloqueActualizado(bloque, j, nombreRealRom.get(j)));
+                yaPuestos.add(j);
+            } else if (romsCompletos.contains(fichero)) {
+                bloques.append(bloque);            // ROM presente que no gestionamos: se respeta tal cual
+                if (!bloque.endsWith("\n")) {
+                    bloques.append("\n");
+                }
+            }
+            // else: apunta a un fichero que ya no está (p.ej. «.gba» vieja): se descarta
+        }
+        for (Juego j : instalados) {               // instalados sin entrada previa: bloque nuevo
+            if (!yaPuestos.contains(j)) {
+                bloques.append(bloqueNuevo(j, nombreRealRom.get(j)));
+                yaPuestos.add(j);
+            }
+        }
+        String nuevo = "<?xml version=\"1.0\"?>\n<gameList>\n" + bloques + "</gameList>\n";
+        if (normalizarFinGl(nuevo).equals(normalizarFinGl(viejo))) {
             return false;
         }
-        String base = nombre.substring(0, nombre.length() - img.length());   // sin la extensión de imagen
-        if (base.equals(media) || !base.startsWith(media + ".")) {
+        File dir = gamelist.getParentFile();
+        if (dir != null && !dir.isDirectory() && !dir.mkdirs()) {
             return false;
         }
-        String segmento = base.substring(media.length() + 1);                // lo que sobra entre media y la imagen
-        return segmento.matches("[A-Za-z0-9]{1,5}");                         // extensión de ROM tipo «nsp», «3ds», «cue», «gba»
+        return escribirTextoGamelist(gamelist, nuevo);
+    }
+
+    /** Corrige el &lt;path&gt; de un bloque existente al nombre real y rellena la
+     *  metadata de la ficha que falte (sin pisar lo que ES-DE ya tuviera). */
+    private String bloqueActualizado(String bloque, Juego j, String nombreReal) {
+        String b = PATH_GAME_GL.matcher(bloque).replaceFirst(
+                Matcher.quoteReplacement("<path>./" + escaparXmlGl(nombreReal) + "</path>"));
+        if (!b.contains("<name>")) {
+            b = insertarEtiqueta(b, "name", j.nombreMostrado());
+        }
+        for (String[] par : META_A_GAMELIST) {
+            String valor = j.metadata.get(par[0]);
+            if (valor != null && !valor.isEmpty() && !b.contains("<" + par[1] + ">")) {
+                b = insertarEtiqueta(b, par[1], valor);
+            }
+        }
+        if (!b.endsWith("\n")) {
+            b += "\n";
+        }
+        return b;
+    }
+
+    /** Bloque nuevo con path real + nombre + metadata de la ficha. */
+    private String bloqueNuevo(Juego j, String nombreReal) {
+        StringBuilder sb = new StringBuilder("\t<game>\n\t\t<path>./")
+                .append(escaparXmlGl(nombreReal)).append("</path>\n\t\t<name>")
+                .append(escaparXmlGl(j.nombreMostrado())).append("</name>\n");
+        for (String[] par : META_A_GAMELIST) {
+            String valor = j.metadata.get(par[0]);
+            if (valor != null && !valor.isEmpty()) {
+                sb.append("\t\t<").append(par[1]).append(">").append(escaparXmlGl(valor))
+                        .append("</").append(par[1]).append(">\n");
+            }
+        }
+        return sb.append("\t</game>\n").toString();
+    }
+
+    /** Inserta &lt;clave&gt;valor&lt;/clave&gt; justo antes de &lt;/game&gt;. */
+    private static String insertarEtiqueta(String bloque, String clave, String valor) {
+        String etiqueta = "\t\t<" + clave + ">" + escaparXmlGl(valor) + "</" + clave + ">\n\t";
+        int cierre = bloque.lastIndexOf("</game>");
+        if (cierre < 0) {
+            return bloque;
+        }
+        return bloque.substring(0, cierre) + etiqueta + bloque.substring(cierre);
+    }
+
+    private static String escaparXmlGl(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\"", "&quot;").replace("'", "&apos;");
+    }
+
+    private static String desescaparXmlGl(String s) {
+        return s.replace("&apos;", "'").replace("&quot;", "\"").replace("&gt;", ">")
+                .replace("&lt;", "<").replace("&amp;", "&");
+    }
+
+    private static String normalizarFinGl(String s) {
+        return s.replace("\r\n", "\n").trim();
+    }
+
+    private String leerTextoGamelist(File f) {
+        if (f == null || !f.isFile()) {
+            return null;
+        }
+        try {
+            byte[] datos = java.nio.file.Files.readAllBytes(f.toPath());
+            if (datos.length > 16 * 1024 * 1024) {
+                return null;   // salvaguarda: un gamelist nunca es tan grande
+            }
+            return new String(datos, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Escribe a un temporal y renombra: ES-DE nunca ve un gamelist a medias. */
+    private boolean escribirTextoGamelist(File destino, String contenido) {
+        File carpeta = destino.getParentFile();
+        if (carpeta != null && !carpeta.isDirectory() && !carpeta.mkdirs()) {
+            return false;
+        }
+        File temporal = new File(carpeta, destino.getName() + ".tmp");
+        try (FileOutputStream out = new FileOutputStream(temporal)) {
+            out.write(contenido.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            temporal.delete();
+            return false;
+        }
+        if (destino.exists() && !destino.delete()) {
+            temporal.delete();
+            return false;
+        }
+        return temporal.renameTo(destino);
     }
 
     /** Borra las carátulas cuyo nombre base no corresponde a ningún ROM
@@ -1692,6 +1903,16 @@ public class MainActivity extends BaseActivity {
             juego.corruptoAutomatico = o.optBoolean("corruptoAutomatico", true);
             juego.descargable = o.optBoolean("descargable", true);
             juego.motivoCorrupto = o.isNull("motivoCorrupto") ? null : o.optString("motivoCorrupto", null);
+            JSONObject meta = o.optJSONObject("metadata");
+            if (meta != null) {
+                for (java.util.Iterator<String> it = meta.keys(); it.hasNext(); ) {
+                    String clave = it.next();
+                    String valor = meta.isNull(clave) ? "" : meta.optString(clave, "");
+                    if (!valor.isEmpty()) {
+                        juego.metadata.put(clave, valor);
+                    }
+                }
+            }
             lista.add(juego);
         }
         return lista;

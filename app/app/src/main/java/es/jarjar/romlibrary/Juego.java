@@ -6,7 +6,9 @@ import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 final class Juego {
     final String sistema;
@@ -59,6 +61,10 @@ final class Juego {
     // app lo descarga e instala ella misma (PackageInstaller), en cualquier
     // consola. Si es nativo pero NO soloApk, lo instala jarjar por adb.
     boolean soloApk;
+    // Metadata de la ficha RomsLibrary (descripcion, fecha_lanzamiento, desarrollador,
+    // editor, genero, jugadores, valoracion). La app la escribe en el gamelist de ES-DE
+    // al instalar y en la pasada de higiene (ver GamelistEsDe). Vacío si el servidor no la manda.
+    Map<String, String> metadata = new LinkedHashMap<>();
     boolean descargando; // estado de UI puro (no viene del servidor): sustituye el botón por una barra de progreso.
     boolean enCola; // esperando su turno en la cola de descargas (ver MainActivity.solicitarDescarga).
     volatile long bytesDescargados;
