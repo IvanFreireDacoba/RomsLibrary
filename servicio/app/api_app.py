@@ -48,7 +48,7 @@ router = APIRouter()
 
 RUTA = "/APIs/RomLibraryApp"
 ACCIONES_PUBLICAS = {"hola", "version", "apk", "cliente_version", "cliente", "wii_version", "wii", "solicitar_acceso",
-                     "acceso_estado"}
+                     "acceso_estado", "metadata_steam"}
 
 
 def _clave_valida(request: Request) -> bool:
@@ -77,11 +77,22 @@ def _url_caratula(juego: dict) -> str | None:
     """Carátula de un juego propio: ruta relativa a esta misma API. De otra
     librería pública: URL completa de SU API pública (como las descargas, la
     app la pide directamente allí; ver federacion.py)."""
-    if not juego.get("coverUrl"):
+    cover = juego.get("coverUrl")
+    if not cover:
         return None
-    params = {"accion": "caratula", "system": juego["system"], "filename": juego["coverUrl"].rsplit("/", 1)[-1]}
+    params = {"accion": "caratula", "system": juego["system"], "filename": cover.rsplit("/", 1)[-1]}
     if juego.get("origenUrl"):
         return federacion.url_directa(juego["origenUrl"], params)
+    # Las carátulas de los ports nativos viven en NATIVOS_ROOT (no en COVERS_ROOT):
+    # la rama «nativo» de accion=caratula las sirve de ahí (antes daban 404 en la app).
+    nativo = cover.startswith("/api/native/")
+    if nativo:
+        params["nativo"] = "1"
+    # Token de versión = mtime de la carátula: al cambiarla cambia la URL y la app
+    # (cachea por URL completa) la vuelve a bajar en vez de mostrar la vieja cacheada.
+    v = nucleo.mtime_caratula(juego["system"], params["filename"], nativo)
+    if v:
+        params["v"] = str(v)
     return RUTA + "?" + str(httpx.QueryParams(params))
 
 
@@ -109,6 +120,12 @@ async def api_app(request: Request):
         return _hola(request)
     if accion == "acceso_estado":
         return {"estado": accesos.estado(request.headers.get("x-app-token") or "")}
+    if accion == "metadata_steam":
+        # Metadata (en español) de un juego de Steam por AppID, de la Steam Store
+        # API y cacheada en el servicio (datos públicos de la tienda, sin carátula).
+        appid = _param(q, "appid")
+        campos = await asyncio.to_thread(nucleo.metadata_steam, appid, q.get("refrescar") == "1")
+        return {"appid": appid, **{c: campos.get(c, "") for c in nucleo.STEAM_CAMPOS}}
     if not _acceso_permitido(request, accion):
         mensaje = ("Clave de acceso incorrecta." if ajustes.publico()
                    else "Esta librería es privada: necesita su clave de acceso.")
@@ -131,6 +148,8 @@ async def api_app(request: Request):
             juego["coverUrl"] = _url_caratula(juego)
         return _json(request, juegos)
     if accion == "caratula":
+        if q.get("nativo") == "1":
+            return await asyncio.to_thread(nucleo.descargar_nativo, _param(q, "system"), _param(q, "filename"), I, T)
         return await asyncio.to_thread(nucleo.servir_caratula, _param(q, "system"), _param(q, "filename"), I, T)
     if accion == "descargar":
         return await asyncio.to_thread(federacion.servir_descarga, _param(q, "system"), _param(q, "filename"))

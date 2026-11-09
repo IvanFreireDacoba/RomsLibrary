@@ -35,6 +35,11 @@ from pathlib import Path
 
 import config
 
+# Campos de metadata del juego (los rellena el scraper de jarjar o el usuario en
+# el gestor). Se guardan en la ficha; el scraper solo rellena los VACÍOS y la app
+# los escribe en el gamelist de ES-DE al descargar (ver rellenar_metadata).
+META = ("descripcion", "fecha_lanzamiento", "desarrollador", "editor", "genero", "jugadores", "valoracion")
+
 # Por qué se puede compartir un juego (lo declara quien lo comparte).
 BASES = {
     "homebrew": "Homebrew o juego propio",
@@ -78,6 +83,10 @@ def inicializar() -> None:
             con.execute("ALTER TABLE fichas ADD COLUMN compartido_fecha REAL")
         if "aviso" not in columnas:
             con.execute("ALTER TABLE fichas ADD COLUMN aviso TEXT NOT NULL DEFAULT ''")
+        if "descripcion" not in columnas:
+            # Metadata del juego (scrapeada por jarjar o editada a mano en el gestor).
+            for col in META:
+                con.execute(f"ALTER TABLE fichas ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
         for sobra in ("compartido_por", "aviso_confirmado"):     # no se guarda quién comparte ni quién confirma
             if sobra in columnas:
                 con.execute(f"ALTER TABLE fichas DROP COLUMN {sobra}")
@@ -135,7 +144,28 @@ def guardar(sistema: str, nombre: str, usuario: str, **campos) -> None:
             aviso = str(campos.get("aviso") or "")[:500] if compartido else ""
             con.execute("UPDATE fichas SET compartido = ?, base = ?, base_detalle = ?, compartido_fecha = ?, aviso = ? "
                         "WHERE ruta = ?", (int(compartido), base, detalle, time.time() if compartido else None, aviso, ruta))
+        for col in META:
+            if col in campos:   # edición a mano desde el gestor (autoritativa)
+                con.execute(f"UPDATE fichas SET {col} = ? WHERE ruta = ?", (str(campos[col] or "").strip()[:4000], ruta))
         con.execute("UPDATE fichas SET usuario = ?, fecha = ? WHERE ruta = ?", (usuario, time.time(), ruta))
+
+
+def rellenar_metadata(sistema: str, nombre: str, campos: dict) -> list[str]:
+    """Rellena SOLO los campos de metadata que estén VACÍOS: el scraper nunca pisa
+    lo que el usuario haya puesto ni lo ya scrapeado. Devuelve los campos rellenados."""
+    ruta = f"{sistema}/{nombre}"
+    rellenados = []
+    with _conectar() as con:
+        con.execute("INSERT OR IGNORE INTO fichas (ruta) VALUES (?)", (ruta,))
+        actual = con.execute("SELECT * FROM fichas WHERE ruta = ?", (ruta,)).fetchone()
+        for col in META:
+            nuevo = str(campos.get(col) or "").strip()
+            if nuevo and not (actual[col] or "").strip():
+                con.execute(f"UPDATE fichas SET {col} = ? WHERE ruta = ?", (nuevo[:4000], ruta))
+                rellenados.append(col)
+        if rellenados:
+            con.execute("UPDATE fichas SET fecha = ? WHERE ruta = ?", (time.time(), ruta))
+    return rellenados
 
 
 def renombrar(sistema: str, viejo: str, nuevo: str) -> None:
@@ -218,4 +248,6 @@ def completar(j: dict, ficha: dict | None, verif: dict | None) -> None:
     j["compartido"] = bool(ficha.get("compartido"))
     j["base"] = ficha.get("base") if j["compartido"] else None
     j["baseDetalle"] = (ficha.get("base_detalle") or "") if j["compartido"] else ""
-    j["avisoCompartir"] = (ficha.get("aviso") or "") if j["compartido"] else ""                 # para el gestor                         # el administrador dijo que está bien
+    j["avisoCompartir"] = (ficha.get("aviso") or "") if j["compartido"] else ""                 # para el gestor
+    # Metadata (scrapeada o editada): la ve el gestor y la app la escribe en el gamelist de ES-DE.
+    j["metadata"] = {col: (ficha.get(col) or "") for col in META}

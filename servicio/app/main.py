@@ -17,6 +17,9 @@ import subprocess
 import tempfile
 import time
 import unicodedata
+import urllib.error
+import urllib.parse
+import urllib.request
 import zipfile
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -263,10 +266,167 @@ def buscar_caratula(sistema: str, nombre_rom: str) -> Optional[str]:
     return None
 
 
+# ---------------- poda de versiones anteriores (mantenimiento automático) ----------------
+#
+# El usuario NO quiere guardar versiones viejas de un juego: solo la última. Al
+# subir una versión nueva de un juego que ya estaba, la anterior se borra sola.
+# «Mismo juego» se decide por el NOMBRE NORMALIZADO, la misma convención que el
+# cruce por nombre de la app (ActualizadorRoms.normalizar): sin extensión, sin
+# tildes, sin (región)/[tag], separadores colapsados, minúsculas. Ver la memoria
+# romlibrary_cruce_por_nombre.
+
+_PODA_PARENTESIS = re.compile(r"[\(\[].*?[\)\]]")
+_PODA_SEPARADORES = re.compile(r"[\s_\-:!.]+")
+
+
+def _normalizar_nombre(nombre: str) -> str:
+    """Nombre normalizado para el cruce por nombre (idéntico al de la app)."""
+    base = nombre
+    punto = base.rfind(".")
+    if punto > 0:
+        base = base[:punto]                           # sin extensión
+    base = unicodedata.normalize("NFKD", base)
+    base = "".join(c for c in base if not unicodedata.combining(c))   # sin tildes
+    base = _PODA_PARENTESIS.sub(" ", base)            # sin (región)/[tag]
+    base = _PODA_SEPARADORES.sub(" ", base).strip().lower()
+    return base
+
+
+def _eliminar_juego_de_disco(sistema: str, nombre: str) -> None:
+    """Borra por completo un juego de la librería: ROM/carpeta + carátula +
+    ficha + ruta de su cadena de versiones (la fila de hashes la limpia solo el
+    hilo de hashes al no verla en disco). Un único sitio para la poda."""
+    import fichas
+    import versiones
+    ruta = (ROOT / sistema / nombre).resolve()
+    if not str(ruta).startswith(str(ROOT.resolve())) or not ruta.exists():
+        return
+    if ruta.is_dir():
+        shutil.rmtree(ruta, ignore_errors=True)
+    else:
+        ruta.unlink(missing_ok=True)
+    caratula = buscar_caratula(sistema, nombre)
+    if caratula:
+        (COVERS_ROOT / sistema / caratula).unlink(missing_ok=True)
+    try:
+        fichas.borrar(sistema, nombre)
+    except Exception as e:  # noqa: BLE001
+        print(f"[poda] ficha de {sistema}/{nombre}: {e}", flush=True)
+    try:
+        versiones.olvidar_ruta(f"{sistema}/{nombre}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[poda] cadena de {sistema}/{nombre}: {e}", flush=True)
+
+
+def _podar_versiones_anteriores(sistema: str, nombre_nuevo: str) -> list[str]:
+    """Tras subir un juego NUEVO, borra la versión ANTERIOR del mismo juego si
+    la hubiera (no se guardan versiones viejas, solo la última). SEGURO —ante la
+    duda NO borra—:
+      · Solo actúa si hay EXACTAMENTE UN juego anterior con el mismo nombre
+        normalizado en ese sistema. Si hay varios es ambiguo (p.ej. variantes de
+        región o de idioma) y no se toca nada.
+      · Si el viejo y el nuevo tienen una cabecera de ROM legible y su código
+        DIFIERE, son juegos distintos (p.ej. un romhack): tampoco se borra.
+    Devuelve la lista de nombres borrados."""
+    import versiones
+    try:
+        norm = _normalizar_nombre(nombre_nuevo)
+        if not norm:
+            return []
+        carpeta = ROOT / sistema
+        if not carpeta.is_dir():
+            return []
+        viejos = [p.name for p in carpeta.iterdir()
+                  if not p.name.startswith(".") and p.name != nombre_nuevo
+                  and _normalizar_nombre(p.name) == norm]
+        if len(viejos) != 1:
+            if viejos:
+                print(f"[poda] {sistema}/{nombre_nuevo}: coincide por nombre con varios "
+                      f"({viejos}); no se poda (ambiguo)", flush=True)
+            return []
+        viejo = viejos[0]
+        cod_nuevo = versiones._codigo_de(carpeta / nombre_nuevo, sistema)
+        cod_viejo = versiones._codigo_de(carpeta / viejo, sistema)
+        if cod_nuevo and cod_viejo and cod_nuevo[0] != cod_viejo[0]:
+            print(f"[poda] {sistema}/{nombre_nuevo} ({cod_nuevo[0]}) y «{viejo}» ({cod_viejo[0]}): "
+                  f"cabeceras distintas, no se poda (juegos distintos)", flush=True)
+            return []
+        _eliminar_juego_de_disco(sistema, viejo)
+        print(f"[poda] {sistema}: versión anterior «{viejo}» eliminada "
+              f"(sustituida por «{nombre_nuevo}»)", flush=True)
+        return [viejo]
+    except Exception as e:  # noqa: BLE001 -- la poda nunca puede tumbar una subida
+        print(f"[poda] error podando {sistema}/{nombre_nuevo}: {e}", flush=True)
+        return []
+
+
+def _sanear_covers() -> int:
+    """Barrido al arrancar: renombra las carátulas de COVERS_ROOT que se hayan
+    quedado con la EXTENSIÓN del ROM dentro del nombre («Juego.nsp.jpg» ->
+    «Juego.jpg»). ES-DE y la app casan la carátula por el nombre del ROM SIN
+    extensión, así que una con la extensión del ROM no se encontraba. Solo toca
+    lo que claramente sobra (el segmento interno es una extensión de ROM válida
+    para ese sistema). Devuelve cuántas arregló."""
+    if not COVERS_ROOT.is_dir():
+        return 0
+    arregladas = 0
+    for carpeta_sis in COVERS_ROOT.iterdir():
+        if not carpeta_sis.is_dir():
+            continue
+        exts_rom = EXTENSIONES_POR_SISTEMA.get(carpeta_sis.name, set())
+        if not exts_rom:
+            continue
+        for cover in list(carpeta_sis.iterdir()):
+            if not cover.is_file() or cover.suffix.lower() not in EXTENSIONES_CARATULA_PERMITIDAS:
+                continue
+            interno = Path(cover.stem).suffix.lower()    # «.nsp» de «Juego.nsp.jpg»
+            if interno and interno in exts_rom:
+                destino = carpeta_sis / (Path(cover.stem).stem + cover.suffix.lower())
+                if not destino.exists():
+                    try:
+                        cover.rename(destino)
+                        arregladas += 1
+                        print(f"[covers] renombrada {cover.name} -> {destino.name}", flush=True)
+                    except OSError as e:
+                        print(f"[covers] no se pudo renombrar {cover.name}: {e}", flush=True)
+    if arregladas:
+        print(f"[covers] saneadas {arregladas} carátula(s) mal nombradas al arrancar", flush=True)
+    return arregladas
+
+
 def _sistemas_con_nativos() -> set[str]:
     if not NATIVOS_ROOT.is_dir():
         return set()
     return {c.name for c in NATIVOS_ROOT.iterdir() if c.is_dir()}
+
+
+def _sidecar_nativo(sistema: str, filename: str) -> tuple[Optional[Path], Optional[dict]]:
+    """Localiza el sidecar de un port nativo por su nombre mostrado o su stem.
+    Devuelve (ruta_sidecar, datos) o (None, None) si ese juego no es nativo.
+    Lo usan la ficha y el cambio de carátula: los nativos NO viven en ROOT sino
+    en NATIVOS_ROOT/<sistema>/<Nombre>.{json,zip,img}."""
+    carpeta = NATIVOS_ROOT / sistema
+    if not carpeta.is_dir():
+        return None, None
+    for side in carpeta.glob("*.json"):
+        try:
+            d = json.loads(side.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if filename in (d.get("name", side.stem), side.stem):
+            return side, d
+    return None, None
+
+
+def _cover_url_nativo(sistema: str, carpeta: Path, side: Path, d: dict) -> Optional[str]:
+    """La carátula de un nativo vive junto a él (NATIVOS_ROOT), referida por el
+    campo «cover» del sidecar y servida por /api/native. Para nativos antiguos
+    cuya carátula se subió a COVERS_ROOT, se mantiene como respaldo."""
+    cover = d.get("cover")
+    if cover and (carpeta / cover).is_file():
+        return f"/api/native/{sistema}/{cover}"
+    caratula = buscar_caratula(sistema, d.get("name", side.stem)) or buscar_caratula(sistema, side.stem)
+    return f"/api/cover/{sistema}/{caratula}" if caratula else None
 
 
 def _nativos_de(sistema: str) -> list[dict]:
@@ -286,12 +446,11 @@ def _nativos_de(sistema: str) -> list[dict]:
         if not (carpeta / zip_name).is_file():
             continue
         nombre = d.get("name", side.stem)
-        caratula = buscar_caratula(sistema, nombre) or buscar_caratula(sistema, side.stem)
         res.append({
             "system": sistema,
             "filename": nombre,
             "sizeBytes": (carpeta / zip_name).stat().st_size,
-            "coverUrl": f"/api/cover/{sistema}/{caratula}" if caratula else None,
+            "coverUrl": _cover_url_nativo(sistema, carpeta, side, d),
             "esGrupo": False,
             "tipoGrupo": "nativo",
             "roles": None,
@@ -587,6 +746,23 @@ def listar_juegos_galeria(
             resultado.append(nat)
     resultado.sort(key=lambda j: (j["system"], _clave_orden(j["filename"])))
     return resultado
+
+
+def mtime_caratula(sistema: str, fichero: str, nativo: bool = False) -> Optional[int]:
+    """mtime (entero) del fichero de carátula, para versionar su URL en la app:
+    al cambiar la carátula cambia la URL -> la app (que cachea por URL completa)
+    la vuelve a descargar en vez de servir la vieja de su caché. None si no existe.
+    Las nativas viven en NATIVOS_ROOT; el resto en COVERS_ROOT."""
+    sistema = nombre_seguro(sistema)
+    fichero = nombre_seguro(fichero)
+    raiz = NATIVOS_ROOT if nativo else COVERS_ROOT
+    ruta = (raiz / sistema / fichero).resolve()
+    if not str(ruta).startswith(str(raiz.resolve())) or not ruta.is_file():
+        return None
+    try:
+        return int(ruta.stat().st_mtime)
+    except OSError:
+        return None
 
 
 @app.get("/api/cover/{sistema}/{fichero}")
@@ -887,7 +1063,11 @@ async def subir_juego(
             destino_rom = carpeta_grupo
 
     nombre_resultado = destino_rom.name  # carpeta del juego (rpgmaker/grupo) o fichero (resto)
-    return {"ok": True, "system": system, "filename": nombre_resultado, "cover": caratula_guardada}
+    # Mantenimiento automático: si esto es una versión nueva de un juego que ya
+    # estaba, borra la anterior (no se guardan versiones viejas, solo la última).
+    podados = _podar_versiones_anteriores(system, nombre_resultado)
+    return {"ok": True, "system": system, "filename": nombre_resultado, "cover": caratula_guardada,
+            "podados": podados}
 
 
 
@@ -1095,7 +1275,9 @@ async def finalizar_grupo(
         except ValueError:
             pass  # best-effort aquí, igual que antes: sin carátula el juego se guarda igual.
 
-    return {"ok": True, "cover": caratula_guardada}
+    # Igual que en subir_juego: poda la versión anterior del mismo juego si la hay.
+    podados = _podar_versiones_anteriores(system, carpeta_juego.name)
+    return {"ok": True, "cover": caratula_guardada, "podados": podados}
 
 
 @app.delete("/api/group/{sistema}/{nombre_juego}")
@@ -1251,23 +1433,130 @@ async def cambiar_caratula(
     cover: UploadFile = File(...),
 ):
     """Sustituye la carátula de un juego ya existente (misma validación por
-    bytes reales y conversión WEBP->PNG que al subir)."""
+    bytes reales y conversión WEBP->PNG que al subir). Vale para los ROM
+    emulados (carátula en COVERS_ROOT) y para los ports nativos, cuya carátula
+    vive junto al nativo (NATIVOS_ROOT) y la referencia el sidecar."""
     exigir_token(request, token)
     system = nombre_seguro(system)
     filename = nombre_seguro(filename)
     ruta_rom = (ROOT / system / filename).resolve()
-    if not str(ruta_rom).startswith(str(ROOT.resolve())) or not ruta_rom.exists():
+    es_rom = str(ruta_rom).startswith(str(ROOT.resolve())) and ruta_rom.exists()
+    side, datos = (None, None) if es_rom else _sidecar_nativo(system, filename)
+    if not es_rom and side is None:
         raise HTTPException(status_code=404, detail="Juego no encontrado.")
     contenido = await cover.read()
     if extension_real_de_imagen(contenido[:16]) is None:
         raise HTTPException(status_code=400, detail="La imagen no es PNG, JPG ni WEBP.")
-    stem = Path(filename).stem
-    # La anterior puede tener otra extensión (.jpg -> .png): se borra antes
-    # para que buscar_caratula no siga encontrando la vieja.
-    for anterior in _caratulas_de(system, stem):
-        anterior.unlink()
-    guardada = guardar_caratula(contenido, COVERS_ROOT / system, stem)
+    if es_rom:
+        stem = Path(filename).stem
+        # La anterior puede tener otra extensión (.jpg -> .png): se borra antes
+        # para que buscar_caratula no siga encontrando la vieja.
+        for anterior in _caratulas_de(system, stem):
+            anterior.unlink()
+        guardada = guardar_caratula(contenido, COVERS_ROOT / system, stem)
+        return {"ok": True, "cover": guardada}
+    # Port nativo: la carátula va junto a él y el sidecar la referencia en «cover».
+    carpeta = NATIVOS_ROOT / system
+    stem = side.stem
+    viejas = {carpeta / (stem + ext) for ext in EXTENSIONES_CARATULA_PERMITIDAS}
+    if datos.get("cover"):
+        viejas.add(carpeta / datos["cover"])
+    # Duplicados antiguos que quedaran en COVERS_ROOT (los nativos ya no se sirven de ahí).
+    viejas.update(_caratulas_de(system, stem))
+    viejas.update(_caratulas_de(system, datos.get("name", stem)))
+    for anterior in viejas:
+        if anterior.is_file():
+            anterior.unlink()
+    guardada = guardar_caratula(contenido, carpeta, stem)
+    datos["cover"] = guardada
+    side.write_text(json.dumps(datos, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return {"ok": True, "cover": guardada}
+
+
+# ---------- Metadata de juegos de Steam (GameNative) ----------
+# Los juegos de Steam NO son ROMs de la librería: su metadata se saca de la
+# Steam Store API (en español) y se CACHEA en disco para no pegarle a Steam en
+# cada consulta, de modo que todas las consolas (la Nova, cloroboy, la APK) vean
+# lo mismo. Son datos PÚBLICOS de la tienda. Nunca incluye carátula.
+STEAM_API = "https://store.steampowered.com/api/appdetails"
+STEAM_CACHE = config.DATOS / "cache" / "steam"
+STEAM_TTL_OK = 30 * 86400        # metadata encontrada: se recuerda un mes
+STEAM_TTL_FALLO = 3 * 86400      # appid sin datos: se reintenta a los 3 días
+STEAM_CAMPOS = ("descripcion", "fecha_lanzamiento", "desarrollador", "editor", "genero", "jugadores", "valoracion")
+
+
+def _steam_mapear(data: dict) -> dict:
+    """Mapea la respuesta de appdetails a los 7 campos de metadata (sin carátula)."""
+    desc = re.sub(r"<[^>]+>", "", data.get("short_description") or "").strip()
+    cats = [str(c.get("description", "")).lower() for c in (data.get("categories") or [])]
+    multi = any(p in c for c in cats for p in ("multijugador", "varios jugadores", "cooper", "co-op", "pvp", "multi-player"))
+    uno = any(p in c for c in cats for p in ("un jugador", "1 jugador", "single-player", "un solo jugador"))
+    mc = (data.get("metacritic") or {}).get("score")
+    val = f"{mc/100:.2f}" if isinstance(mc, (int, float)) and 0 <= mc <= 100 else ""
+    return {
+        "descripcion": desc,
+        "fecha_lanzamiento": str((data.get("release_date") or {}).get("date", "")).strip(),
+        "desarrollador": ", ".join(data.get("developers") or []),
+        "editor": ", ".join(data.get("publishers") or []),
+        "genero": ", ".join(g.get("description", "") for g in (data.get("genres") or []) if g.get("description")),
+        "jugadores": "2+" if multi else ("1" if uno else ""),
+        "valoracion": val,
+    }
+
+
+def _steam_fetch(appid: str) -> Optional[dict]:
+    """Consulta Steam. Devuelve los campos, {} si el appid no tiene datos, o
+    None si no se pudo consultar (red/Steam caído)."""
+    url = STEAM_API + "?" + urllib.parse.urlencode({"appids": appid, "l": "spanish", "cc": "es"})
+    req = urllib.request.Request(url, headers={"User-Agent": "RomsLibrary-metadata/1.0 (sund.es; hobby)"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            d = json.load(r)
+    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
+        return None
+    app_ = d.get(str(appid)) or {}
+    if not app_.get("success") or not isinstance(app_.get("data"), dict):
+        return {}
+    return _steam_mapear(app_["data"])
+
+
+def metadata_steam(appid: str, refrescar: bool = False) -> dict:
+    """Los 7 campos de metadata (en español) de un juego de Steam por su AppID,
+    cacheados en disco. {} si Steam dice que ese appid no existe."""
+    appid = str(appid).strip()
+    if not appid.isdigit():
+        raise HTTPException(status_code=400, detail="AppID de Steam inválido.")
+    cache = STEAM_CACHE / f"{appid}.json"
+    if not refrescar and cache.is_file():
+        try:
+            g = json.loads(cache.read_text(encoding="utf-8"))
+            ttl = STEAM_TTL_OK if g.get("campos") else STEAM_TTL_FALLO
+            if time.time() - g.get("fecha", 0) < ttl:
+                return g.get("campos") or {}
+        except (OSError, ValueError):
+            pass
+    campos = _steam_fetch(appid)
+    if campos is None:          # Steam no responde: sirve lo cacheado aunque esté viejo
+        if cache.is_file():
+            try:
+                return json.loads(cache.read_text(encoding="utf-8")).get("campos") or {}
+            except (OSError, ValueError):
+                pass
+        raise HTTPException(status_code=502, detail="No se pudo consultar la Steam Store API.")
+    STEAM_CACHE.mkdir(parents=True, exist_ok=True)
+    tmp = cache.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({"fecha": time.time(), "campos": campos}, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(cache)
+    return campos
+
+
+@app.get("/api/metadata/steam/{appid}")
+def api_metadata_steam(appid: str, refrescar: bool = Query(default=False)):
+    """Metadata (en español) de un juego de Steam por su AppID, de la Steam Store
+    API y cacheada. Datos públicos de la tienda: sin token. La usan la APK y el
+    volcado al gamelist de la Nova. Nunca incluye carátula."""
+    campos = metadata_steam(appid, refrescar)
+    return {"appid": appid, **{c: campos.get(c, "") for c in STEAM_CAMPOS}}
 
 
 @app.get("/api/health")
@@ -1326,6 +1615,7 @@ fichas.inicializar()
 accesos.inicializar()
 verificacion.inicializar()
 comprimidos.inicializar()
+_sanear_covers()        # arregla carátulas mal nombradas (con extensión del ROM) que hubiera de antes
 app.include_router(api_app.router)
 app.include_router(federacion.router)
 app.include_router(gestor.router)

@@ -1011,6 +1011,17 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
         <label for="rl-edit-titulo">Título común (junta las versiones en otros idiomas)</label>
         <input type="text" id="rl-edit-titulo" list="rl-titulos">
 
+        <label>Metadata <span style="color:#6f8f6f;font-weight:normal;font-size:11px;">(la scrapea RomsLibrary; edítala a tu gusto, no se vuelve a sobrescribir)</span></label>
+        <textarea id="rl-edit-descripcion" rows="4" placeholder="Descripción" style="width:100%;resize:vertical;"></textarea>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;">
+            <input type="text" id="rl-edit-fecha_lanzamiento" placeholder="Fecha de lanzamiento (p. ej. 06/05/2003)">
+            <input type="text" id="rl-edit-genero" placeholder="Género">
+            <input type="text" id="rl-edit-desarrollador" placeholder="Desarrollador">
+            <input type="text" id="rl-edit-editor" placeholder="Compañía / editor">
+            <input type="text" id="rl-edit-jugadores" placeholder="Jugadores (p. ej. 1, 2+)">
+            <input type="text" id="rl-edit-valoracion" placeholder="Valoración (0–1, p. ej. 0.85)">
+        </div>
+
         <label>¿Quién puede verlo?</label>
                 <div class="rl-vis" id="rl-edit-vis">
                     <label class="rl-vis-op"><input type="radio" name="rl-edit-vis" value="privado" checked>
@@ -1809,6 +1820,9 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
             rlPintarIdiomas('rl-edit-idiomas', juego.idiomas || []);
             rlPonerVisibilidad('rl-edit-vis', juego);
             document.getElementById('rl-edit-titulo').value = juego.titulo || '';
+            { const md = juego.metadata || {};
+              ['descripcion', 'fecha_lanzamiento', 'desarrollador', 'editor', 'genero', 'jugadores', 'valoracion']
+                  .forEach((k) => { document.getElementById('rl-edit-' + k).value = md[k] || ''; }); }
             document.getElementById('rl-edit-corrupto').value = juego.corruptoAutomatico ? 'auto'
                 : juego.corrupto ? '1' : juego.corruptoDescartado ? '0' : 'auto';
             document.getElementById('rl-edit-motivo').value = juego.corrupto && !juego.corruptoAutomatico ? juego.motivoCorrupto : '';
@@ -1836,9 +1850,12 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
 
         let rlFichaOriginal = '';
         function rlFichaEditada() {
+            const metadata = {};
+            ['descripcion', 'fecha_lanzamiento', 'desarrollador', 'editor', 'genero', 'jugadores', 'valoracion']
+                .forEach((k) => { metadata[k] = document.getElementById('rl-edit-' + k).value.trim(); });
             return JSON.stringify({ idiomas: rlLeerIdiomas('rl-edit-idiomas'), titulo: document.getElementById('rl-edit-titulo').value.trim(),
                 corrupto: document.getElementById('rl-edit-corrupto').value, motivo: document.getElementById('rl-edit-motivo').value.trim(),
-                vis: rlLeerVisibilidad('rl-edit-vis') });
+                vis: rlLeerVisibilidad('rl-edit-vis'), metadata: metadata });
         }
 
         // ---------- Visibilidad de cada juego (solo para mí / compartido con su base) ----------
@@ -2204,6 +2221,7 @@ th { color: var(--hk-green); text-align: left; background: var(--hk-bg-panel); }
                     form.append('titulo', datos.titulo);
                     form.append('corrupto', datos.corrupto);
                     form.append('motivo', datos.motivo);
+                    Object.entries(datos.metadata || {}).forEach(([k, v]) => form.append('meta_' + k, v));
                     rlAnadirVisibilidad(form, datos.vis);
                     const data = await (await rlFetch('api/juegos', { method: 'POST', body: form })).json();
                     if (!data.success) throw new Error(data.message);

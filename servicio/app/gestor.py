@@ -302,7 +302,9 @@ def _nombre_grupo_final(sistema: str, nombre_juego: str) -> str:
 async def _guardar_ficha(form, sistema: str, usuario: str) -> dict:
     """Título (para juntar idiomas), idiomas y marca de archivo corrupto de un juego propio."""
     nombre = nucleo.nombre_seguro(str(form.get("nombre", "")))
-    if not (config.ROOT / nucleo.nombre_seguro(sistema) / nombre).exists():
+    sis = nucleo.nombre_seguro(sistema)
+    # Los ports nativos no viven en ROOT sino en NATIVOS_ROOT: se reconocen por su sidecar.
+    if not (config.ROOT / sis / nombre).exists() and nucleo._sidecar_nativo(sis, nombre)[0] is None:
         raise HTTPException(404, "Juego no encontrado.")
     campos = {}
     if "titulo" in form:
@@ -316,6 +318,9 @@ async def _guardar_ficha(form, sistema: str, usuario: str) -> dict:
         campos["corrupto"] = {"1": True, "0": False}.get(valor)       # "auto" -> lo decide la verificación
         campos["motivo"] = str(form.get("motivo", ""))
         campos["sha"] = federacion.sha_conocido(nucleo.nombre_seguro(sistema), nombre)   # la marca es de esta versión
+    for col in fichas.META:     # metadata editada a mano (autoritativa, no la pisa el scraper)
+        if f"meta_{col}" in form:
+            campos[col] = str(form.get(f"meta_{col}", ""))
     compartido = campos.pop("compartido", None)
     return {"ok": True, **await _compartir(sistema, nombre, usuario, compartido, form, **campos)}
 
